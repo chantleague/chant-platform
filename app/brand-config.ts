@@ -1,4 +1,3 @@
-// app/brand-config.ts
 export type BrandKey = "chantleague" | "battlesleague";
 
 export type Brand = {

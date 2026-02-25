@@ -1,4 +1,3 @@
-// app/components/Navbar.tsx
 "use client";
 
 import Link from "next/link";
@@ -10,7 +9,7 @@ type NavbarProps = {
   brand: Brand;
 };
 
-export function Navbar({ brand }: NavbarProps) {
+export default function Navbar({ brand }: NavbarProps) {
   const searchParams = useSearchParams();
   const overrideParam = searchParams.get("brand");
 
@@ -21,7 +20,7 @@ export function Navbar({ brand }: NavbarProps) {
 
   const initials = activeBrand.name
     .split(" ")
-    .map((p) => p[0])
+    .map((part) => part[0])
     .join("");
 
   return (
@@ -39,9 +38,7 @@ export function Navbar({ brand }: NavbarProps) {
           </div>
 
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold text-zinc-100">
-              {activeBrand.name}
-            </span>
+            <span className="text-sm font-semibold text-zinc-100">{activeBrand.name}</span>
             <span className="text-xs text-zinc-400">Multi-tenant platform</span>
           </div>
         </Link>

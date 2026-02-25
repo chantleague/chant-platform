@@ -1,12 +1,14 @@
-// app/lib/getBrand.ts
+import { use } from "react";
 import { headers } from "next/headers";
-import { brands, type Brand } from "../brand-config";
+import { brands, type Brand, type BrandKey } from "../brand-config";
 
-export async function getBrand(): Promise<Brand> {
-  const h = await headers();
+export function getBrand(): Brand {
+  const requestHeaders = use(headers());
+  const key = (requestHeaders.get("x-brand") || "chantleague").toLowerCase() as BrandKey;
 
-  const key = (h.get("x-brand") || "").toLowerCase();
+  if (key === "battlesleague") {
+    return brands.battlesleague;
+  }
 
-  if (key === "battlesleague") return brands.battlesleague;
   return brands.chantleague;
 }

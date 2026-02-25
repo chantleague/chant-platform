@@ -1,7 +1,6 @@
-// app/components/Footer.tsx
 const socials = ["TikTok", "YouTube", "Instagram", "X", "Spotify", "WhatsApp", "LinkedIn"];
 
-export function Footer() {
+export default function Footer() {
   return (
     <footer className="border-t border-zinc-800 bg-black/90">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 text-xs text-zinc-500 md:flex-row md:items-center md:justify-between lg:px-6">
@@ -11,13 +10,13 @@ export function Footer() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 uppercase tracking-[0.18em]">
-          {socials.map((s) => (
+          {socials.map((social) => (
             <button
-              key={s}
+              key={social}
               type="button"
               className="rounded-full border border-zinc-800 px-3 py-1 text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-200"
             >
-              {s}
+              {social}
             </button>
           ))}
         </div>

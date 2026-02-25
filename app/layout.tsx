@@ -1,12 +1,11 @@
-// app/layout.tsx
 import "./globals.css";
 import type { ReactNode } from "react";
 import { getBrand } from "./lib/getBrand";
-import { Navbar } from "./components/Navbar";
-import { Footer } from "./components/Footer";
+import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
 
-export default async function RootLayout({ children }: { children: ReactNode }) {
-  const brand = await getBrand();
+export default function RootLayout({ children }: { children: ReactNode }) {
+  const brand = getBrand();
 
   return (
     <html lang="en" className="h-full">
@@ -16,9 +15,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       >
         <div className="flex min-h-screen flex-col">
           <Navbar brand={brand} />
-          <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col p-6">
-            {children}
-          </main>
+          <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col p-6">{children}</main>
           <Footer />
         </div>
       </body>
