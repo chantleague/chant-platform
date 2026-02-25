@@ -1,12 +1,19 @@
 import { headers } from "next/headers";
-import { brands, type Brand } from "../brand-config";
+import { brands, type Brand, type BrandKey } from "../brand-config";
 
-export function getBrand(): Brand {
-  const h = headers();
-  const key = (h.get("x-brand") || "").toLowerCase();
+export async function getBrand(): Promise<Brand> {
+  const h = await headers();
 
-  if (key === "battlesleague") return brands.battlesleague;
-  if (key === "chantleague") return brands.chantleague;
+  // Prefer middleware-set header (best)
+  const headerKey = (h.get("x-brand") || "").toLowerCase() as BrandKey;
+  if (headerKey && headerKey in brands) return brands[headerKey];
 
-  return brands.chantleague; // fallback
+  // Fallback: detect via host
+  const host = (h.get("x-forwarded-host") || h.get("host") || "").toLowerCase();
+
+  if (host.includes("battlesleague")) return brands.battlesleague;
+  if (host.includes("chantleague")) return brands.chantleague;
+
+  // Safety fallback
+  return brands.chantleague;
 }

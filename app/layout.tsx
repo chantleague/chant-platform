@@ -1,18 +1,20 @@
-import "./globals.css";
 import type { ReactNode } from "react";
+import "./globals.css";
+
 import { getBrand } from "./lib/getBrand";
 import { Navbar } from "./components/Navbar";
 import { Footer } from "./components/Footer";
 
-export default function RootLayout({ children }: { children: ReactNode }) {
-  const brand = getBrand();
+export default async function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const brand = await getBrand();
 
   return (
     <html lang="en" className="h-full">
-      <body
-        className="min-h-full bg-black text-zinc-50"
-        style={{ backgroundColor: brand.secondary }}
-      >
+      <body className="min-h-full bg-black text-zinc-50">
         <div className="flex min-h-screen flex-col">
           <Navbar brand={brand} />
           <main className="mx-auto w-full max-w-6xl flex-1 p-6">{children}</main>
