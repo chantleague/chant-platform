@@ -28,9 +28,11 @@ export function Navbar({ brand }: NavbarProps) {
         <Link href="/" className="flex items-center gap-2">
           <div
             className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700 text-xs font-bold tracking-tight"
-            style={{
-              borderColor: activeBrand.primaryColor,
-              color: activeBrand.primaryColor,
+          
+              style={{
+                borderColor: activeBrand.primary,
+                color: activeBrand.primary,
+              }}
             }}
           >
             {initials}
