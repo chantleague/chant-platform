@@ -1,18 +1,27 @@
 import { headers } from "next/headers";
 import { brands } from "../brand-config";
 
-export function getBrand() {
+function pickBrandFromHost(hostRaw: string | null) {
+  const host = (hostRaw || "").toLowerCase().replace(/^www\./, "");
 
+  // ✅ map your domains to brands here
+  if (host === "battlesleague.com") return brands["battleleague"];
+  if (host === "chantleague.com") return brands["chantleague"];
+  if (host === "chantleague.co.uk") return brands["chantleague"];
+
+  // fallback
+  return brands["chantleague"];
+}
+
+export function getBrand() {
   const h = headers();
 
-  const brandHeader = h.get("x-brand");
+  // these are the common host headers you’ll see on Vercel
+  const host =
+    h.get("x-forwarded-host") ||
+    h.get("host") ||
+    h.get("x-vercel-deployment-url") ||
+    "";
 
-  console.log("Detected brand:", brandHeader);
-
-  if (brandHeader && brands[brandHeader]) {
-    return brands[brandHeader];
-  }
-
-  return brands["chantleague"];
-
+  return pickBrandFromHost(host);
 }
