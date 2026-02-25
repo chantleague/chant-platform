@@ -1,26 +1,36 @@
+// middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-function normalizeHost(host: string) {
-  return host.replace(/^https?:\/\//, "").replace(/^www\./, "").split(":")[0].toLowerCase();
+function pickBrand(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^www\./, "");
+
+  if (host.includes("battlesleague") || host.includes("battleleague")) {
+    return "battlesleague";
+  }
+
+  // default
+  return "chantleague";
 }
 
 export function middleware(req: NextRequest) {
-  const host = normalizeHost(req.headers.get("host") || "");
+  const hostname =
+    req.headers.get("x-forwarded-host") ||
+    req.headers.get("host") ||
+    req.nextUrl.hostname ||
+    "";
 
-  const res = NextResponse.next();
+  const brand = pickBrand(hostname);
 
-  // Domain → brand mapping
-  if (host === "battlesleague.com") {
-    res.headers.set("x-brand", "battlesleague");
-  } else {
-    // chantleague.com, chantleague.co.uk, anything else
-    res.headers.set("x-brand", "chantleague");
-  }
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-brand", brand);
 
-  return res;
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 }
 
+// Run middleware on all routes
 export const config = {
-  matcher: ["/((?!_next|favicon.ico|assets|api).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
