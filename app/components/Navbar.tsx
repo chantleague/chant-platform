@@ -3,45 +3,59 @@
 import Link from "next/link";
 import type { Brand } from "../brand-config";
 
-export default function Navbar({ brand }: { brand: Brand }) {
-  const initials = brand.name
-    .split(" ")
-    .map((w) => w[0])
-    .join("");
+type NavbarProps = {
+  brand: Brand;
+};
+
+export function Navbar({ brand }: NavbarProps) {
+  const items =
+    brand.key === "chantleague"
+      ? [
+          { label: "Battles", href: "/battles" },
+          { label: "Leaderboards", href: "/leaderboards" },
+          { label: "Events", href: "/events" },
+          { label: "Clubs", href: "/clubs" },
+          { label: "Fixtures", href: "/fixtures" },
+          { label: "Shop", href: "/shop" },
+        ]
+      : [
+          { label: "Overview", href: "/" },
+          { label: "Careers", href: "/careers" },
+          { label: "Partners", href: "/partners" },
+          { label: "Contact", href: "/contact" },
+        ];
 
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-800 bg-black/70 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 lg:px-6">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
         <Link href="/" className="flex items-center gap-3">
           <div
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700 text-xs font-bold"
+            className="flex h-9 w-9 items-center justify-center rounded-full border text-xs font-bold"
             style={{ borderColor: brand.primary, color: brand.primary }}
           >
-            {initials}
+            {brand.initials}
           </div>
           <div className="leading-tight">
             <div className="text-sm font-semibold">{brand.name}</div>
-            <div className="text-[11px] text-zinc-400">
-              Multi-League Platform
-            </div>
+            <div className="text-[11px] text-zinc-400">{brand.tagline}</div>
           </div>
         </Link>
 
-        <nav className="hidden gap-5 text-sm text-zinc-300 md:flex">
-          <Link href="/battles">Battles</Link>
-          <Link href="/leaderboards">Leaderboards</Link>
-          <Link href="/events">Events</Link>
-          <Link href="/clubs">Clubs</Link>
-          <Link href="/fixtures">Fixtures</Link>
-          <Link href="/shop">Shop</Link>
-          <Link href="/resources">Resources</Link>
+        <nav className="hidden items-center gap-5 text-sm text-zinc-300 md:flex">
+          {items.map((i) => (
+            <Link key={i.href} href={i.href} className="hover:text-white">
+              {i.label}
+            </Link>
+          ))}
         </nav>
 
-        <div
-          className="rounded-full px-3 py-1 text-xs font-semibold"
-          style={{ backgroundColor: brand.primary + "22", color: brand.primary }}
-        >
-          LIVE NOW
+        <div className="flex items-center gap-2">
+          <span
+            className="rounded-full border px-3 py-1 text-xs"
+            style={{ borderColor: brand.primary, color: brand.primary }}
+          >
+            {brand.key === "chantleague" ? "LIVE NOW" : "PRO"}
+          </span>
         </div>
       </div>
     </header>

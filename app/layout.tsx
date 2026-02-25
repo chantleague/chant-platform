@@ -1,9 +1,8 @@
 import "./globals.css";
 import type { ReactNode } from "react";
-
-import Navbar from "./components/Navbar";
-import Footer from "./components/Footer";
 import { getBrand } from "./lib/getBrand";
+import { Navbar } from "./components/Navbar";
+import { Footer } from "./components/Footer";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const brand = getBrand();
@@ -16,9 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       >
         <div className="flex min-h-screen flex-col">
           <Navbar brand={brand} />
-          <main className="mx-auto w-full max-w-6xl flex-1 p-6">
-            {children}
-          </main>
+          <main className="mx-auto w-full max-w-6xl flex-1 p-6">{children}</main>
           <Footer />
         </div>
       </body>

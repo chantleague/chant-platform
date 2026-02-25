@@ -1,25 +1,26 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 function normalizeHost(host: string) {
-  return host.toLowerCase().replace(/^www\./, "").trim();
+  return host.replace(/^https?:\/\//, "").replace(/^www\./, "").split(":")[0].toLowerCase();
 }
 
 export function middleware(req: NextRequest) {
-  // Vercel commonly sends the real domain here:
-  const forwarded = req.headers.get("x-forwarded-host");
-  const host = normalizeHost(forwarded ?? req.headers.get("host") ?? "");
+  const host = normalizeHost(req.headers.get("host") || "");
 
-  const brand =
-    host.includes("battlesleague") ? "battleleague" : "chantleague";
+  const res = NextResponse.next();
 
-  const requestHeaders = new Headers(req.headers);
-  requestHeaders.set("x-brand", brand);
+  // Domain → brand mapping
+  if (host === "battlesleague.com") {
+    res.headers.set("x-brand", "battlesleague");
+  } else {
+    // chantleague.com, chantleague.co.uk, anything else
+    res.headers.set("x-brand", "chantleague");
+  }
 
-  return NextResponse.next({
-    request: { headers: requestHeaders },
-  });
+  return res;
 }
 
 export const config = {
-  matcher: ["/((?!_next|favicon.ico|robots.txt|sitemap.xml).*)"],
+  matcher: ["/((?!_next|favicon.ico|assets|api).*)"],
 };
