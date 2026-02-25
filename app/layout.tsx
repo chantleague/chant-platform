@@ -1,16 +1,12 @@
-import type { ReactNode } from "react";
 import "./globals.css";
+import type { ReactNode } from "react";
 
-import { getBrand } from "./lib/getBrand";
 import Navbar from "./components/Navbar";
-import { Footer } from "./components/Footer";
+import Footer from "./components/Footer";
+import { getBrand } from "./lib/getBrand";
 
-export default async function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const brand = getBrand(); // ✅ auto-detect by domain
+export default function RootLayout({ children }: { children: ReactNode }) {
+  const brand = getBrand();
 
   return (
     <html lang="en" className="h-full">
@@ -20,7 +16,7 @@ export default async function RootLayout({
       >
         <div className="flex min-h-screen flex-col">
           <Navbar brand={brand} />
-          <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col p-6">
+          <main className="mx-auto w-full max-w-6xl flex-1 p-6">
             {children}
           </main>
           <Footer />

@@ -1,23 +1,25 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
-export function middleware(request: NextRequest) {
+function normalizeHost(host: string) {
+  return host.toLowerCase().replace(/^www\./, "").trim();
+}
 
-  const host = request.headers.get("host") || "";
+export function middleware(req: NextRequest) {
+  // Vercel commonly sends the real domain here:
+  const forwarded = req.headers.get("x-forwarded-host");
+  const host = normalizeHost(forwarded ?? req.headers.get("host") ?? "");
 
-  let brand = "chantleague";
+  const brand =
+    host.includes("battlesleague") ? "battleleague" : "chantleague";
 
-  if (host.includes("battlesleague")) {
-    brand = "battleleague";
-  }
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-brand", brand);
 
-  const response = NextResponse.next();
-
-  response.headers.set("x-brand", brand);
-
-  return response;
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 }
 
 export const config = {
-  matcher: "/:path*",
+  matcher: ["/((?!_next|favicon.ico|robots.txt|sitemap.xml).*)"],
 };

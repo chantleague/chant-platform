@@ -1,138 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import type { Brand, BrandKey } from "../brand-config";
-import { brands } from "../brand-config";
+import type { Brand } from "../brand-config";
 
-type NavbarProps = {
-  brand: Brand;
-};
-
-export function Navbar({ brand }: NavbarProps) {
-  const searchParams = useSearchParams();
-  const overrideParam = searchParams.get("brand");
-  const overrideKey = (overrideParam?.toLowerCase() ?? "") as BrandKey;
-  const overrideBrand =
-    overrideKey && overrideKey in brands ? brands[overrideKey] : null;
-
-  const activeBrand = overrideBrand ?? brand;
-  const initials = activeBrand.name
+export default function Navbar({ brand }: { brand: Brand }) {
+  const initials = brand.name
     .split(" ")
-    .map((part) => part[0])
+    .map((w) => w[0])
     .join("");
 
   return (
-    <header className="sticky top-0 z-40 border-b border-zinc-800 bg-black/80 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-zinc-800 bg-black/70 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 lg:px-6">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-3">
           <div
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700 text-xs font-bold tracking-tight"
-          
-              style={{
-                borderColor: activeBrand.primary,
-                color: activeBrand.primary,
-              }}
-            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700 text-xs font-bold"
+            style={{ borderColor: brand.primary, color: brand.primary }}
           >
             {initials}
           </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-xs uppercase tracking-[0.2em] text-zinc-400">
-              Multi-League
-            </span>
-            <span className="text-sm font-semibold text-zinc-50">
-              {activeBrand.name}
-            </span>
+          <div className="leading-tight">
+            <div className="text-sm font-semibold">{brand.name}</div>
+            <div className="text-[11px] text-zinc-400">
+              Multi-League Platform
+            </div>
           </div>
         </Link>
-        <nav className="hidden items-center gap-4 text-xs font-medium text-zinc-300 md:flex lg:gap-6">
-          <Link
-            href="/battles"
-            className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-          >
-            Battles
-          </Link>
-          <Link
-            href="/leaderboards"
-            className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-          >
-            Leaderboards
-          </Link>
-          <Link
-            href="/events"
-            className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-          >
-            Events
-          </Link>
-          {activeBrand.theme === "football" ? (
-            <>
-              <Link
-                href="/clubs"
-                className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-              >
-                Clubs
-              </Link>
-              <Link
-                href="/fixtures"
-                className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-              >
-                Fixtures
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link
-                href="/careers"
-                className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-              >
-                Careers
-              </Link>
-              <Link
-                href="/students"
-                className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-              >
-                Students
-              </Link>
-              <Link
-                href="/professionals"
-                className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-              >
-                Professionals
-              </Link>
-            </>
-          )}
-          <Link
-            href="/shop"
-            className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-          >
-            Shop
-          </Link>
-          <Link
-            href="/resources"
-            className="rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-50"
-          >
-            Resources
-          </Link>
+
+        <nav className="hidden gap-5 text-sm text-zinc-300 md:flex">
+          <Link href="/battles">Battles</Link>
+          <Link href="/leaderboards">Leaderboards</Link>
+          <Link href="/events">Events</Link>
+          <Link href="/clubs">Clubs</Link>
+          <Link href="/fixtures">Fixtures</Link>
+          <Link href="/shop">Shop</Link>
+          <Link href="/resources">Resources</Link>
         </nav>
-        <div className="flex items-center gap-2">
-          <span className="hidden text-[10px] uppercase tracking-[0.2em] text-zinc-500 sm:inline">
-            Live Arena
-          </span>
-          <div
-            className="flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400 shadow-[0_0_25px_rgba(16,185,129,0.4)]"
-            style={{
-              backgroundColor: `${activeBrand.primaryColor}20`,
-              color: activeBrand.primaryColor,
-              boxShadow: `0 0 25px ${activeBrand.primaryColor}66`,
-            }}
-          >
-            <span className="mr-1 h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-            Live Now
-          </div>
+
+        <div
+          className="rounded-full px-3 py-1 text-xs font-semibold"
+          style={{ backgroundColor: brand.primary + "22", color: brand.primary }}
+        >
+          LIVE NOW
         </div>
       </div>
     </header>
   );
 }
-
