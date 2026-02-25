@@ -1,10 +1,6 @@
 import type { ReactNode } from "react";
-import type { Metadata } from "next";
 import "./globals.css";
-import { Navbar } from "./components/Navbar";
-// app/layout.tsx
 
-import "./globals.css";
 import { getBrand } from "./lib/getBrand";
 import Navbar from "./components/Navbar";
 import { Footer } from "./components/Footer";

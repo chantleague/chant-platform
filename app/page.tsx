@@ -1,4 +1,4 @@
-import { getBrand } from "@/lib/getBrand";
+import { getBrand } from "./lib/getBrand";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export default function Home() {
