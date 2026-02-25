@@ -17,7 +17,12 @@ if (hostname === "battlesleague.co.uk") return "battleleague";
 }
 
 export function middleware(req: NextRequest) {
-  const hostHeader = req.headers.get("host") ?? "";
+    const rawHost =
+    req.headers.get("x-forwarded-host") ??
+    req.headers.get("host") ??
+    "";
+
+  const hostHeader = rawHost.split(",")[0].trim();
   const hostname = normalizeHost(hostHeader);
 
   const brand = resolveBrandFromHost(hostname);
@@ -25,11 +30,14 @@ export function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-brand", brand);
 
-  return NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
+  const res = NextResponse.next({
+    request: { headers: requestHeaders },
   });
+
+  res.headers.set("x-debug-host", hostname);
+  res.headers.set("x-debug-brand", brand);
+
+  return res;
 }
 
 export const config = {
