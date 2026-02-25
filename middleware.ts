@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 function normalizeHost(host: string) {
-  const clean = host.toLowerCase().trim();
-  const [hostname] = clean.split(":");
+    const h = (host || "").toLowerCase().split(":")[0]; // remove port
+    return h.startsWith("www.") ? h.slice(4) : h;        // remove www.
+  }
 
-  return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
-}
 
 function resolveBrandFromHost(hostname: string) {
   if (hostname === "chantleague.com") return "chantleague";
