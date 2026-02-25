@@ -1,18 +1,29 @@
-export const brands = {
+// app/brand-config.ts
+
+export type BrandKey = "chantleague" | "battlesleague";
+
+export type Brand = {
+  key: BrandKey;
+  name: string;
+  theme: "football" | "professional";
+  primary: string;
+  secondary: string;
+};
+
+export const brands: Record<BrandKey, Brand> = {
   chantleague: {
+    key: "chantleague",
     name: "Chant League",
     theme: "football",
-    primaryColor: "#00c2ff",
-    secondaryColor: "#001a2b",
+    primary: "#00D1FF",
+    secondary: "#061B2B",
   },
-  battleleague: {
+  battlesleague: {
+    key: "battlesleague",
     name: "Battle League",
     theme: "professional",
-    primaryColor: "#7c3aed",
-    secondaryColor: "#0f172a",
+    primary: "#B084FF",
+    secondary: "#120B1F",
   },
-} as const;
-
-export type BrandKey = keyof typeof brands;
-export type Brand = (typeof brands)[BrandKey];
+};
 
