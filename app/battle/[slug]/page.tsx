@@ -37,8 +37,32 @@ const mockBattles = [
 ];
 
 export default function Page({ params }: { params: { slug: string } }) {
+  // debug output to diagnose routing issues in production
+  const pathname = params.slug ? `/battle/${params.slug}` : "/battle";
+  const availableSlugs = mockBattles.map((b) => b.slug).join(", ");
+  const found = mockBattles.some((b) => b.slug === params.slug);
+
   const battle = mockBattles.find((b) => b.slug === params.slug);
-  if (!battle) return notFound();
+
+  const debugBlock = (
+    <div className="p-2 bg-yellow-900 text-white text-xs space-y-1">
+      <pre>pathname: {pathname}</pre>
+      <pre>params.slug: {params.slug}</pre>
+      <pre>available slugs: {availableSlugs}</pre>
+      <pre>match found: {String(found)}</pre>
+    </div>
+  );
+
+  if (!battle) {
+    return (
+      <>
+        {debugBlock}
+        <div className="p-4 bg-red-900 text-white space-y-2">
+          <h2 className="font-semibold">Debug: battle not found</h2>
+        </div>
+      </>
+    );
+  }
 
   return (
     <div className="space-y-6">
