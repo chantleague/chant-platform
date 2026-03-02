@@ -36,13 +36,7 @@ const mockBattles = [
   },
 ];
 
-type Params = {
-  params: {
-    slug: string;
-  };
-};
-
-export default function BattleDetailPage({ params }: Params) {
+export default function Page({ params }: { params: { slug: string } }) {
   const battle = mockBattles.find((b) => b.slug === params.slug);
   if (!battle) return notFound();
 
