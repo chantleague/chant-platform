@@ -1,17 +1,17 @@
 import { notFound } from "next/navigation";
 import { mockBattles } from "../../lib/mockBattles";
 
-export default async function Page({ params }: { params: { slug: string } }) {
+export default async function Page({ params }: { params: { slug: string | string[] } }) {
   // unwrap promise per Next.js requirement
   const { slug: rawSlug } = await params;
-  const slug = decodeURIComponent(rawSlug ?? "").trim();
 
-  // locate battle by slug after unwrapping params
-  const battle = mockBattles.find((b) => b.slug === slug);
-  if (!battle) {
-    // no battle matches slug, render Next's notFound
-    return notFound();
-  }
+  // support optional array param (catch edge cases) and normalize
+  const maybeSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
+  const slug = decodeURIComponent((maybeSlug ?? "").toString()).trim().toLowerCase();
+
+  // strict, case-insensitive comparison against canonical list
+  const battle = mockBattles.find((b) => (b.slug ?? "").toLowerCase() === slug);
+  if (!battle) return notFound();
 
   return (
     <div className="space-y-6">
