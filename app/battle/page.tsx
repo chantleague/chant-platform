@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation";
-
-export default function BattlePage() {
-  // redirect to listing
-  redirect("/battles");
+export default function Page() {
+  // Middleware handles redirect for exact /battle; render nothing for fallback.
+  return null;
 }

@@ -14,6 +14,13 @@ function getBrandFromHostname(hostname: string): "chantleague" | "battlesleague"
 }
 
 export function middleware(req: NextRequest) {
+  // Only redirect exact /battle to /battles. Allow all other /battle/* routes to proceed.
+  const pathname = req.nextUrl.pathname;
+  if (pathname === "/battle" || pathname === "/battle/") {
+    const dest = new URL("/battles", req.url);
+    return NextResponse.redirect(dest);
+  }
+
   const hostname =
     req.headers.get("x-forwarded-host") ||
     req.headers.get("host") ||
