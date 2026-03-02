@@ -2,34 +2,33 @@ import { BattleCard } from "../components/BattleCard";
 
 const mockBattles = [
   {
-    slug: "derby-night-north-v-south",
-    title: "Derby Night: North End vs South Side",
-    subtitle: "Chants clash under the floodlights.",
-    status: "live" as const,
-    tag: "Chant Battle",
-    metricLabel: "Chants submitted",
-    metricValue: "3,241",
-  },
-  {
-    slug: "campus-finals-chant-off",
-    title: "Campus Finals Chant-Off",
-    subtitle: "Student sections fight for the loudest legacy.",
+    slug: "arsenal-vs-spurs",
+    title: "Arsenal vs Spurs Chant Battle",
+    subtitle: "North London rivalry ignites before matchday",
     status: "upcoming" as const,
-    tag: "Student Arena",
-    metricLabel: "Squads registered",
-    metricValue: "48",
+    tag: "Premier League",
+    metricLabel: "Fans joined",
+    metricValue: "0",
   },
   {
-    slug: "career-day-pitch-battle",
-    title: "Career Day Pitch Battle",
-    subtitle: "Professionals pitch, students roar, mentors vote.",
-    status: "finished" as const,
-    tag: "Career Battle",
-    metricLabel: "Total votes",
-    metricValue: "19,084",
+    slug: "man-utd-vs-liverpool",
+    title: "Man United vs Liverpool Chant Battle",
+    subtitle: "England’s biggest rivalry goes head-to-head",
+    status: "upcoming" as const,
+    tag: "Premier League",
+    metricLabel: "Fans joined",
+    metricValue: "0",
   },
+  {
+    slug: "england-vs-brazil",
+    title: "England vs Brazil Chant Battle",
+    subtitle: "World Cup rivalry begins",
+    status: "upcoming" as const,
+    tag: "World Cup",
+    metricLabel: "Fans joined",
+    metricValue: "0",
+  }
 ];
-
 export default function BattlesPage() {
   return (
     <div className="space-y-6">
@@ -43,7 +42,16 @@ export default function BattlesPage() {
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         {mockBattles.map((battle) => (
-          <BattleCard key={battle.slug} {...battle} />
+          <BattleCard
+            key={battle.slug}
+            slug={battle.slug}
+            title={battle.title}
+            subtitle={battle.subtitle}
+            status={battle.status}
+            tag={battle.tag}
+            metricLabel={battle.metricLabel}
+            metricValue={battle.metricValue}
+          />
         ))}
       </div>
     </div>
