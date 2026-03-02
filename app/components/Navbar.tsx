@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { mockBattles } from "../lib/mockBattles";
 import type { Brand, BrandKey } from "../brand-config";
 import { brands } from "../brand-config";
 
@@ -44,7 +45,15 @@ export default function Navbar({ brand }: NavbarProps) {
         </Link>
 
         <nav className="flex items-center gap-4 text-xs uppercase tracking-widest text-zinc-300">
-          <Link href="/battle" className="hover:text-white">
+          {/* featured battle link */}
+          <Link
+            href={
+              mockBattles.length > 0
+                ? `/battle/${mockBattles[0].slug}`
+                : "/battle"
+            }
+            className="hover:text-white"
+          >
             Battle
           </Link>
           <Link href="/battles" className="hover:text-white">

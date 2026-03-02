@@ -1,67 +1,16 @@
 import { notFound } from "next/navigation";
+import { mockBattles } from "../../lib/mockBattles";
 
-const mockBattles = [
-  {
-    slug: "arsenal-vs-spurs",
-    title: "Arsenal vs Spurs Chant Battle",
-    description:
-      "North London rivalry ignites before matchday. Two of England's most passionate supporter bases go head-to-head in this legendary fixture.",
-    stats: {
-      chants: 1842,
-      voters: 5234,
-      peakDb: 118,
-    },
-  },
-  {
-    slug: "man-utd-vs-liverpool",
-    title: "Man United vs Liverpool Chant Battle",
-    description:
-      "England's biggest rivalry goes head-to-head. The Reds and the Red Devils clash in one of football's most historic matchups.",
-    stats: {
-      chants: 3241,
-      voters: 9804,
-      peakDb: 116,
-    },
-  },
-  {
-    slug: "england-vs-brazil",
-    title: "England vs Brazil Chant Battle",
-    description:
-      "World Cup rivalry begins. Two footballing giants battle it out for supremacy on the world stage.",
-    stats: {
-      chants: 2156,
-      voters: 6782,
-      peakDb: 120,
-    },
-  },
-];
+export default async function Page({ params }: { params: { slug: string } }) {
+  // unwrap promise per Next.js requirement
+  const { slug: rawSlug } = await params;
+  const slug = decodeURIComponent(rawSlug ?? "").trim();
 
-export default function Page({ params }: { params: { slug: string } }) {
-  // debug output to diagnose routing issues in production
-  const pathname = params.slug ? `/battle/${params.slug}` : "/battle";
-  const availableSlugs = mockBattles.map((b) => b.slug).join(", ");
-  const found = mockBattles.some((b) => b.slug === params.slug);
-
-  const battle = mockBattles.find((b) => b.slug === params.slug);
-
-  const debugBlock = (
-    <div className="p-2 bg-yellow-900 text-white text-xs space-y-1">
-      <pre>pathname: {pathname}</pre>
-      <pre>params.slug: {params.slug}</pre>
-      <pre>available slugs: {availableSlugs}</pre>
-      <pre>match found: {String(found)}</pre>
-    </div>
-  );
-
+  // locate battle by slug after unwrapping params
+  const battle = mockBattles.find((b) => b.slug === slug);
   if (!battle) {
-    return (
-      <>
-        {debugBlock}
-        <div className="p-4 bg-red-900 text-white space-y-2">
-          <h2 className="font-semibold">Debug: battle not found</h2>
-        </div>
-      </>
-    );
+    // no battle matches slug, render Next's notFound
+    return notFound();
   }
 
   return (
