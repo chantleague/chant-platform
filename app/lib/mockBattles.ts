@@ -6,6 +6,7 @@ export type Battle = {
     chants: number;
     voters: number;
     peakDb: number;
+    fansJoined: number; // added for UI counting
   };
 };
 
@@ -19,6 +20,7 @@ export const mockBattles: Battle[] = [
       chants: 1842,
       voters: 5234,
       peakDb: 118,
+      fansJoined: 3421,
     },
   },
   {
@@ -30,6 +32,7 @@ export const mockBattles: Battle[] = [
       chants: 3241,
       voters: 9804,
       peakDb: 116,
+      fansJoined: 5987,
     },
   },
   {
@@ -41,6 +44,31 @@ export const mockBattles: Battle[] = [
       chants: 2156,
       voters: 6782,
       peakDb: 120,
+      fansJoined: 4123,
+    },
+  },
+  {
+    slug: "barcelona-vs-real-madrid",
+    title: "Barcelona vs Real Madrid Chant Battle",
+    description:
+      "El Clásico returns to the battle arena. Two Spanish titans face off in arguably the biggest club rivalry in world football.",
+    stats: {
+      chants: 4021,
+      voters: 11023,
+      peakDb: 122,
+      fansJoined: 7500,
+    },
+  },
+  {
+    slug: "celtic-vs-rangers",
+    title: "Celtic vs Rangers Chant Battle",
+    description:
+      "The Old Firm rivalry sparks again as the Scottish giants go battle-to-battle in one of football's fiercest derbies.",
+    stats: {
+      chants: 1789,
+      voters: 4321,
+      peakDb: 115,
+      fansJoined: 2890,
     },
   },
 ];

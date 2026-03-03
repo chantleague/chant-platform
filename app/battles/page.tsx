@@ -1,32 +1,29 @@
 import { BattleCard } from "../components/BattleCard";
-
 import { mockBattles } from "../lib/mockBattles";
-
 
 export default function BattlesPage() {
   return (
-    <div className="space-y-6">
+    <div className="p-6">
       <div className="space-y-2">
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
-          Battles
-        </h1>
-        <p className="text-sm text-zinc-400">
-          Active and upcoming chant and career battles across Chant League and Battle League.
-        </p>
+        <h1 className="text-2xl font-bold text-zinc-50">Battles</h1>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        {mockBattles.map((battle) => (
-          <BattleCard
-            key={battle.slug}
-            slug={battle.slug}
-            title={battle.title}
-            subtitle={battle.description.split(".")[0]}
-            status="upcoming"
-            tag="Premier League"
-            metricLabel="Fans joined"
-            metricValue="0"
-          />
-        ))}
+      <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {mockBattles.map((battle) => {
+          const [clubA, clubB] = battle.slug.split("-vs-");
+          const clubDisplay = `${clubA.replace(/-/g, " ")} vs ${clubB.replace(/-/g, " ")}`;
+          return (
+            <BattleCard
+              key={battle.slug}
+              slug={battle.slug}
+              title={clubDisplay}
+              subtitle={battle.description}
+              status="upcoming"
+              tag="battle"
+              metricLabel="Fans Joined"
+              metricValue={battle.stats.fansJoined.toLocaleString()}
+            />
+          );
+        })}
       </div>
     </div>
   );
