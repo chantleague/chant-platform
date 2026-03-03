@@ -12,7 +12,15 @@ export default async function ClubPage({ params }: { params: { slug: string | st
   const club = mockClubs.find((c) => c.slug === slug);
   if (!club) {
     console.log("Club not found for slug", slug);
-    return notFound();
+    // render simple not-found message instead of throwing generic 404
+    return (
+      <div className="p-6 text-center">
+        <h1 className="text-xl font-bold text-zinc-50">Club not found</h1>
+        <p className="text-sm text-zinc-400">
+          We couldn't find a club for &quot;{slug}&quot;.
+        </p>
+      </div>
+    );
   }
 
   const relatedBattles = mockBattles.filter((b) => b.slug.includes(slug));
