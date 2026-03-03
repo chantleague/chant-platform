@@ -2,7 +2,8 @@ const fetch = global.fetch || require('node-fetch');
 const endpoints = [
   '/battles',
   '/battle/arsenal-vs-spurs',
-  '/battles/arsenal-vs-spurs'
+  '/battle/man-utd-vs-liverpool',
+  '/battle/england-vs-brazil'
 ];
 
 const base = process.env.BASE_URL || 'http://localhost:3000';

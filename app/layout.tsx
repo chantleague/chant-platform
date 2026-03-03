@@ -1,11 +1,11 @@
 import "./globals.css";
 import type { ReactNode } from "react";
-import { getBrand } from "./lib/getBrand";
+import { useBrand } from "./lib/getBrand";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  const brand = getBrand();
+  const brand = useBrand();
 
   return (
     <html lang="en" className="h-full">

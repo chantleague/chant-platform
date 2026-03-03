@@ -1,7 +1,7 @@
-import { getBrand } from "./lib/getBrand";
+import { useBrand } from "./lib/getBrand";
 
 export default function Home() {
-  const brand = getBrand();
+  const brand = useBrand();
 
   return (
     <div className="space-y-6">
