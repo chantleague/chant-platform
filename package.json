@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "lsof -ti:3000 | xargs -r kill && next dev -p 3000",
     "build": "next build",
     "start": "next start",
     "smoke": "node scripts/smoke-test.js",
