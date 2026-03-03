@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "smoke:test": "node scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js",
     "lint": "eslint"
   },
   "dependencies": {
