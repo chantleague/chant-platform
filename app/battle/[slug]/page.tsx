@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { mockBattles } from "../../lib/mockBattles";
+import JoinBattleButton from "../../components/JoinBattleButton";
 
 export default async function Page({ params }: { params: { slug: string | string[] } }) {
   // unwrap promise per Next.js requirement
@@ -24,7 +25,7 @@ export default async function Page({ params }: { params: { slug: string | string
         </h1>
         <p className="max-w-2xl text-sm text-zinc-400">{battle.description}</p>
       </header>
-      <section className="grid gap-4 text-xs text-zinc-300 sm:grid-cols-3">
+      <section className="grid gap-4 text-xs text-zinc-300 sm:grid-cols-4">
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
           <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
             Chants Submitted
@@ -50,6 +51,7 @@ export default async function Page({ params }: { params: { slug: string | string
             <span className="ml-1 text-xs text-zinc-500">dB</span>
           </p>
         </div>
+        <JoinBattleButton />
       </section>
     </div>
   );
