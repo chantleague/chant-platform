@@ -3,13 +3,17 @@ import { mockClubs } from "../../lib/mockClubs";
 import { mockBattles } from "../../lib/mockBattles";
 import { BattleCard } from "../../components/BattleCard";
 
-export default function ClubPage({ params }: { params: { slug: string | string[] } }) {
-  const { slug: rawSlug } = params;
+export default async function ClubPage({ params }: { params: { slug: string | string[] } }) {
+  const { slug: rawSlug } = await params;
   const maybeSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
   const slug = (maybeSlug ?? "").toString().trim().toLowerCase();
 
+  console.log("ClubPage hit with slug:", slug);
   const club = mockClubs.find((c) => c.slug === slug);
-  if (!club) return notFound();
+  if (!club) {
+    console.log("Club not found for slug", slug);
+    return notFound();
+  }
 
   const relatedBattles = mockBattles.filter((b) => b.slug.includes(slug));
 
