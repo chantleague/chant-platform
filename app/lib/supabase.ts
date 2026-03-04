@@ -25,6 +25,13 @@ export type Match = {
   updated_at: string
 }
 
+export type ChantVote = {
+  id: string
+  chant_pack_id: string
+  user_id: string
+  created_at: string
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
