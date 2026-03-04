@@ -1,4 +1,9 @@
 import { supabase, ChantPack } from "@/app/lib/supabase";
+import VoteButton from "./VoteButton";
+
+interface ChantPackWithVotes extends ChantPack {
+  voteCount: number;
+}
 
 export default async function OfficialChantPacks({ matchId }: { matchId: string }) {
   const { data: packs, error } = await supabase
@@ -13,7 +18,27 @@ export default async function OfficialChantPacks({ matchId }: { matchId: string 
     return <div className="text-red-500 text-sm">Failed to load official chant packs</div>;
   }
 
-  if (!packs || packs.length === 0) {
+  // Fetch vote counts for all packs
+  const packsWithVotes: ChantPackWithVotes[] = [];
+
+  if (packs && packs.length > 0) {
+    for (const pack of packs) {
+      const { count } = await supabase
+        .from("chant_votes")
+        .select("*", { count: "exact" })
+        .eq("chant_pack_id", pack.id);
+
+      packsWithVotes.push({
+        ...pack,
+        voteCount: count || 0,
+      });
+    }
+  }
+
+  // Sort by vote count (descending)
+  packsWithVotes.sort((a, b) => b.voteCount - a.voteCount);
+
+  if (!packsWithVotes || packsWithVotes.length === 0) {
     return (
       <section className="space-y-4">
         <div>
@@ -42,7 +67,7 @@ export default async function OfficialChantPacks({ matchId }: { matchId: string 
         </h2>
       </div>
       <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2">
-        {packs.map((pack: ChantPack) => (
+        {packsWithVotes.map((pack: ChantPackWithVotes) => (
           <div
             key={pack.id}
             className="rounded-2xl border border-emerald-900/50 bg-emerald-950/30 p-4 hover:border-emerald-700/50 transition-colors"
@@ -73,6 +98,10 @@ export default async function OfficialChantPacks({ matchId }: { matchId: string 
                 </audio>
               </div>
             )}
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-xs text-zinc-400">Votes</p>
+              <VoteButton chantPackId={pack.id} voteCount={pack.voteCount} />
+            </div>
           </div>
         ))}
       </div>
