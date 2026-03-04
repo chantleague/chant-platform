@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { mockClubs } from "../../lib/mockClubs";
 import { mockBattles } from "../../lib/mockBattles";
 import { BattleCard } from "../../components/BattleCard";
+import { getClubBySlug } from "../../lib/canonicalClubRegistry";
 
 export default async function ClubPage({ params }: { params: { slug: string | string[] } }) {
   const { slug: rawSlug } = await params;
@@ -9,22 +10,38 @@ export default async function ClubPage({ params }: { params: { slug: string | st
   const slug = (maybeSlug ?? "").toString().trim().toLowerCase();
 
   console.log("ClubPage hit with slug:", slug);
-  const club = mockClubs.find((c) => c.slug === slug);
+  
+  // Try canonical registry first, fall back to mock clubs
+  let club = getClubBySlug(slug);
+  const canonicalClub = club;
+  
+  // If not in canonical registry, check mock clubs for backwards compatibility
   if (!club) {
-    console.log("Club not found for slug", slug);
-    return notFound();
+    const mockClub = mockClubs.find((c) => c.slug === slug);
+    if (!mockClub) {
+      console.log("Club not found for slug", slug);
+      return notFound();
+    }
+    // Convert mock club to this interface for consistency
+    club = mockClub as any;
   }
 
   const relatedBattles = mockBattles.filter((b) => b.slug.includes(slug));
+  
+  // Use canonical displayName if available, otherwise fall back to name
+  const clubName = canonicalClub?.displayName || (club as any).name || slug;
+  const clubDescription = (club as any).description || `${clubName} fan battles and chants`;
 
   return (
     <div className="p-6 space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold text-zinc-50">{club.name}</h1>
-        <p className="text-sm text-zinc-400">{club.description}</p>
-        <p className="text-xs uppercase tracking-widest text-zinc-500">
-          Total fans: {club.fans.toLocaleString()}
-        </p>
+        <h1 className="text-2xl font-bold text-zinc-50">{clubName}</h1>
+        <p className="text-sm text-zinc-400">{clubDescription}</p>
+        {(club as any).fans && (
+          <p className="text-xs uppercase tracking-widest text-zinc-500">
+            Total fans: {(club as any).fans.toLocaleString()}
+          </p>
+        )}
       </div>
 
       <section className="space-y-4">
