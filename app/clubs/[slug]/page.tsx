@@ -25,7 +25,7 @@ export default async function ClubPage({ params }: { params: { slug: string | st
   const slug = (maybeSlug ?? "").toString().trim().toLowerCase();
 
   const { data: club, error: clubError } = await supabase
-    .from<Club>("clubs")
+    .from("clubs")
     .select("*")
     .eq("slug", slug)
     .single();
@@ -35,10 +35,11 @@ export default async function ClubPage({ params }: { params: { slug: string | st
     return notFound();
   }
 
-  const { data: relatedBattles = [], error: battlesError } = await supabase
+  const { data: rawBattles, error: battlesError } = await supabase
     .from("matches")
     .select("*")
     .ilike("slug", `%${slug}%`);
+  const normalizedBattles: Match[] = (rawBattles as Match[] | null) || [];
 
   if (battlesError) {
     console.error("Error fetching related battles:", battlesError);
@@ -56,11 +57,11 @@ export default async function ClubPage({ params }: { params: { slug: string | st
 
       <section className="space-y-4">
         <h2 className="text-xl font-semibold text-zinc-50">Active battles</h2>
-        {relatedBattles.length === 0 ? (
+        {normalizedBattles.length === 0 ? (
           <p className="text-sm text-zinc-400">No battles found for this club.</p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {relatedBattles.map((b: Match) => {
+            {normalizedBattles.map((b: Match) => {
               const slugVal = b.slug || "";
               const [clubA, clubB] = slugVal.split("-vs-");
               const clubDisplay = `${clubA.replace(/-/g, " ")} vs ${clubB.replace(/-/g, " ")}`;

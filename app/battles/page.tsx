@@ -8,8 +8,11 @@ interface Match {
   description?: string;
   home_team?: string;
   away_team?: string;
-  status?: string;
+  // Supabase stores status as a string, but the UI only accepts these
+  // specific values. Narrow the type so callers must handle defaults.
+  status?: "live" | "upcoming" | "finished";
   starts_at?: string | null;
+  stats?: { fansJoined?: number };
   [key: string]: unknown;
 }
 
@@ -39,12 +42,15 @@ export default async function BattlesPage() {
           const [clubA, clubB] = slugVal.split("-vs-");
           const clubDisplay = `${clubA.replace(/-/g, " ")} vs ${clubB.replace(/-/g, " ")}`;
           return (
-            <BattleCard
+          <BattleCard
               key={slugVal}
               slug={slugVal}
               title={clubDisplay}
               subtitle={(battle.description as string) || ""}
-              status={(battle.status as string) || "upcoming"}
+              status={
+                (battle.status as "live" | "upcoming" | "finished") ||
+                "upcoming"
+              }
               tag="battle"
               metricLabel="Fans Joined"
               metricValue={battle.stats?.fansJoined?.toLocaleString() || "0"}
