@@ -1,4 +1,5 @@
 import { supabase } from "@/app/lib/supabase";
+import { LeaderboardTable } from "@/app/components/LeaderboardTable";
 
 interface ChantPack {
   id: string;
@@ -54,6 +55,25 @@ export default async function LeaderboardsPage() {
 
   // Sort by vote count (descending)
   packsWithVotes.sort((a, b) => b.voteCount - a.voteCount);
+
+  // Calculate most active fans based on votes table
+  type FanRow = { position: number; name: string; metric: string; value: number };
+  const fanRows: FanRow[] = [];
+
+  try {
+    const { data: allVotes } = await supabase.from("votes").select("*");
+    const fanMap: Record<string, number> = {};
+    (allVotes || []).forEach((v: { user_id: string }) => {
+      const uid = v.user_id;
+      fanMap[uid] = (fanMap[uid] || 0) + 1;
+    });
+    const sortedFans = Object.entries(fanMap).sort((a, b) => b[1] - a[1]);
+    sortedFans.slice(0, 10).forEach(([uid, count], idx) => {
+      fanRows.push({ position: idx + 1, name: uid, metric: "votes", value: count });
+    });
+  } catch (e) {
+    console.error("Error fetching fan leaderboard:", e);
+  }
 
   return (
     <div className="space-y-6">
@@ -135,6 +155,19 @@ export default async function LeaderboardsPage() {
           This leaderboard shows the top-voted official chant packs from all battles. Each user can vote once per chant. The ranking updates in real-time as votes are cast.
         </p>
       </div>
+
+      {/* fan leaderboard section */}
+      {fanRows.length > 0 && (
+        <div className="space-y-4">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
+            Fan Leaderboard
+          </p>
+          <h2 className="text-2xl font-semibold tracking-tight text-zinc-50">
+            Most Active Fans
+          </h2>
+          <LeaderboardTable rows={fanRows} label="Fan votes" />
+        </div>
+      )}
     </div>
   );
 }

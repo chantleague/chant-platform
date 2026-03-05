@@ -1,19 +1,110 @@
 import { notFound } from "next/navigation";
+import { supabase } from "../../lib/supabase";
 import { mockBattles } from "../../lib/mockBattles";
+import { mockClubs } from "../../lib/mockClubs"; // used for club fallback
 import JoinBattleButton from "../../components/JoinBattleButton";
 import OfficialChantPacks from "../../components/OfficialChantPacks";
+import BattleVoteButton from "../../components/BattleVoteButton";
+
+interface Battle {
+  id: string;
+  slug: string;
+  title?: string;
+  description?: string;
+  home_team: string;
+  away_team: string;
+  status?: string;
+  stats: { chants: number; voters: number; peakDb: number; fansJoined?: number };
+  [key: string]: unknown;
+}
+
+interface Club {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  fans?: number;
+  [key: string]: unknown;
+}
 
 export default async function Page({ params }: { params: { slug: string | string[] } }) {
-  // unwrap promise per Next.js requirement
-  const { slug: rawSlug } = await params;
-
-  // support optional array param (catch edge cases) and normalize
+  const { slug: rawSlug } = params;
   const maybeSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
-  const slug = decodeURIComponent((maybeSlug ?? "").toString()).trim().toLowerCase();
+  const slug = (maybeSlug ?? "").toString().trim().toLowerCase();
 
-  // strict, case-insensitive comparison against canonical list
-  const battle = mockBattles.find((b) => (b.slug ?? "").toLowerCase() === slug);
-  if (!battle) return notFound();
+  // fetch battle from Supabase
+  let battle: Battle | null = null;
+  let homeClub: Club | null = null;
+  let awayClub: Club | null = null;
+  let homeVotes = 0;
+  let awayVotes = 0;
+
+  try {
+    const { data, error } = await supabase
+      .from("matches")
+      .select("*")
+      .eq("slug", slug)
+      .single();
+    if (!error && data) {
+      battle = data as Battle;
+    }
+  } catch (err) {
+    console.error("Battle query failed", err);
+  }
+
+  // fallback to mock list if Supabase unavailable or battle missing
+  if (!battle) {
+    const mb = mockBattles.find((b) => (b.slug ?? "").toLowerCase() === slug);
+    if (!mb) return notFound();
+    battle = { ...mb, id: "", home_team: (mb.slug || "").split("-vs-")[0], away_team: (mb.slug || "").split("-vs-")[1] } as unknown as Battle;
+  }
+
+  // club lookup
+  try {
+    const { data: h } = await supabase
+      .from("clubs")
+      .select("*")
+      .eq("slug", battle.home_team)
+      .single();
+    if (h) homeClub = h as Club;
+  } catch (e) {
+    console.error("Error fetching home club", e);
+    // fallback to mock
+    homeClub = mockClubs.find((c) => c.slug === battle.home_team) as Club | null;
+  }
+  try {
+    const { data: a } = await supabase
+      .from("clubs")
+      .select("*")
+      .eq("slug", battle.away_team)
+      .single();
+    if (a) awayClub = a as Club;
+  } catch (e) {
+    console.error("Error fetching away club", e);
+    awayClub = mockClubs.find((c) => c.slug === battle.away_team) as Club | null;
+  }
+
+  // votes count
+  try {
+    const { count } = await supabase
+      .from("votes")
+      .select("id", { count: "exact" })
+      .eq("battle_id", battle.id)
+      .eq("club_slug", battle.home_team);
+    homeVotes = count || 0;
+  } catch (error) {
+    console.error("Error counting home votes", error);
+  }
+  try {
+    const { count } = await supabase
+      .from("votes")
+      .select("id", { count: "exact" })
+      .eq("battle_id", battle.id)
+      .eq("club_slug", battle.away_team);
+    awayVotes = count || 0;
+  } catch (error) {
+    console.error("Error counting away votes", error);
+  }
 
   return (
     <div className="space-y-6">
@@ -22,10 +113,35 @@ export default async function Page({ params }: { params: { slug: string | string
           Battle Overview
         </p>
         <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
-          {battle.title}
+          {battle.title || slug.replace(/-/g, " ")}
         </h1>
-        <p className="max-w-2xl text-sm text-zinc-400">{battle.description}</p>
+        {battle.description && <p className="max-w-2xl text-sm text-zinc-400">{battle.description}</p>}
       </header>
+
+      {/* voting area */}
+      <section className="grid grid-cols-2 gap-4">
+        <div className="text-center">
+          <h2 className="text-lg font-semibold text-zinc-50">
+            {homeClub?.name || battle.home_team}
+          </h2>
+          <BattleVoteButton
+            battleId={battle.id}
+            clubSlug={battle.home_team}
+            voteCount={homeVotes}
+          />
+        </div>
+        <div className="text-center">
+          <h2 className="text-lg font-semibold text-zinc-50">
+            {awayClub?.name || battle.away_team}
+          </h2>
+          <BattleVoteButton
+            battleId={battle.id}
+            clubSlug={battle.away_team}
+            voteCount={awayVotes}
+          />
+        </div>
+      </section>
+
       <section className="grid gap-4 text-xs text-zinc-300 sm:grid-cols-4">
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
           <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
@@ -54,6 +170,7 @@ export default async function Page({ params }: { params: { slug: string | string
         </div>
         <JoinBattleButton />
       </section>
+
       <OfficialChantPacks matchId={slug} />
     </div>
   );
