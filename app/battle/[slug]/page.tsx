@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { mockBattles } from "../../lib/mockBattles";
 import JoinBattleButton from "../../components/JoinBattleButton";
+import OfficialChantPacks from "../../components/OfficialChantPacks";
 
 export default async function Page({ params }: { params: { slug: string | string[] } }) {
   // unwrap promise per Next.js requirement
@@ -53,6 +54,7 @@ export default async function Page({ params }: { params: { slug: string | string
         </div>
         <JoinBattleButton />
       </section>
+      <OfficialChantPacks matchId={slug} />
     </div>
   );
 }
