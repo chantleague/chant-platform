@@ -1,4 +1,3 @@
-"use client";
 import { supabase } from '@/app/lib/supabase';
 
 interface Battle {

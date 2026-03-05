@@ -1,6 +1,16 @@
 import Link from "next/link";
 import { supabase } from "@/app/lib/supabase";
 
+interface Match {
+  id: string;
+  title: string;
+  home_team: string;
+  away_team: string;
+  status: string;
+  starts_at: string | null;
+  [key: string]: unknown;
+}
+
 export default async function Page() {
   const { data: battles, error } = await supabase
     .from("matches")
