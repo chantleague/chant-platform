@@ -1,3 +1,4 @@
+// Smoke test page for verifying Supabase connectivity and route existence
 import { supabase } from '@/app/lib/supabase';
 
 interface Battle {
