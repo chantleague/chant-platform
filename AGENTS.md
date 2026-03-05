@@ -1,52 +1,105 @@
-# Agent Guidelines for chant-platform
+# AGENTS.md — Chant League Build Rules (Codex-First)
 
-This repository is managed by an automated assistant ("Codex"). To maintain consistency and efficiency, the following rules govern all interactions and tasks.
+## Non-negotiable rule
+**Codex does ALL work inside the repository.**
+That includes: coding, refactors, bug fixes, route fixes, tests, linting, commits, pushes, pull requests, and verifying previews.
 
-## 1. Codex-First Rule
-- Codex is responsible for all repository work: writing, editing, refactoring, testing, linting, and generating commits and pull requests.
-- The user should **only** be asked to perform actions that require external access, credentials, or the Supabase/hosting dashboards (e.g. adding environment variables, making a Supabase schema change, or approving a billing plan).
+The user should only be asked to do tasks that Codex cannot do due to permissions, secrets, or external dashboards.
 
-## 2. QA Loop Requirement
-- Before declaring a task complete, Codex must run through a quality‑assurance loop:
-  1. Ensure the code builds (lint, typecheck).
-  2. Execute tests and confirm they pass.
-  3. Manually verify any new or changed routes in development mode to avoid runtime 404s.
-  4. Validate that the project behaves as expected locally before concluding.
-- The user should not be told a task is done until this loop is satisfied or a blocker is identified.
+---
 
-## 3. Local Operations Codex Must Perform
-- Linting (`npm run lint` or equivalent).
-- Type checking (`tsc --noEmit` or built‑in Next check).
-- Running the test suite (`npm test` or `npm run smoke`).
-- Visiting new/affected development routes (e.g. `http://localhost:3000/whatever`) to confirm they render without 404s or JavaScript errors.
+## What Codex must do by default (no asking)
+### Repo work (always)
+- Implement requested features and fixes directly in the repo
+- Run QA checks (below) before claiming “done”
+- Commit changes with a clear message
+- Push branch + open PR if required by the repo workflow (otherwise push to main if that’s the established flow)
 
-## 4. Deployment Rules
-- Any change that should be deployed requires a commit and push.
-- If the change is non‑trivial or user-facing, Codex should create a pull request with a descriptive title and summary.
-- The user or a maintainer should merge the PR; Codex should not self-merge.
+### Quality check loop (MANDATORY)
+Before finishing any task, Codex must:
+1) `pnpm lint` (or `npm run lint`)
+2) `pnpm typecheck` (or `npm run typecheck`) if available
+3) `pnpm test` (or `npm test`) if available
+4) Start dev server and verify key routes render without errors:
+   - `/`
+   - `/battles`
+   - battle detail route (e.g. `/battles/<id-or-slug>`)
+   - any club-routing paths in use
+5) Confirm no console errors in the dev log related to:
+   - Supabase client
+   - missing env vars
+   - fetch/CORS
+   - route not found (404)
 
-## 5. Supabase Checklist
-**Codex Actions:**
-- Create or update connection code (`lib/supabase.ts`).
-- Write queries and helpers in the application code.
-- Prepare migration files or SQL if necessary (but not execute them on Supabase itself).
-- Document required environment variables and when they need to be set.
+If a check fails, Codex fixes and repeats the loop until clean.
 
-**User Responsibilities:**
-- Provide Supabase project URL and anon key via environment variables or dashboard.
-- Make schema changes through the Supabase UI/CLI and share details if Codex needs to adapt code.
-- Grant access or share secrets only when absolutely needed.
+---
 
-## 6. Routing Checks
-- Verify that all new or modified routes return a 200 status in development.
-- Explicitly check key paths like `/battles` and individual battle detail routes (e.g., `/battle/slug`) after changes.
-- Ensure there are no accidental 404s or broken links.
+## What Codex is allowed to ask the user to do (ONLY these)
+Codex may request user “takeover” only for:
+- Logging into Supabase / Vercel / GitHub / any external service
+- Creating or copying secrets/keys (e.g. Supabase anon key)
+- Adding environment variables in external dashboards (Vercel, GitHub, Supabase)
+- Enabling settings in dashboards (RLS, Data API, CORS in Supabase UI if applicable)
+- Payments / billing / irreversible settings changes
 
-## 7. Stop Conditions & Consent Checkpoints
-- Codex stops and asks the user only when it reaches a step that requires external access or human decision:
-  - Adding environment variables.
-  - Changing a third‑party service configuration.
-  - Deploying to production or altering billing settings.
-  - When unsure about user intent or scope of a requested feature.
+**Codex must not ask the user to manually edit code** unless the user explicitly insists.
 
-By following these guidelines, the repository workflow remains predictable, automated, and efficient while respecting the boundary between code management and external systems.
+---
+
+## Supabase integration rules
+### Codex handles (in repo)
+- Correct Supabase client initialization:
+  - Uses `NEXT_PUBLIC_SUPABASE_URL`
+  - Uses `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Ensures env vars are referenced correctly in code
+- Ensures API calls use the correct client (server vs client usage)
+- Adds safe error logging and user-friendly UI states
+- Adds a `/test` page or equivalent sanity check only if needed
+- Removes any broken test routes once validated
+
+### User handles (external)
+- Creating the Supabase project
+- Copying:
+  - Project URL
+  - Anon key
+- Adding env vars in:
+  - Vercel project env vars
+  - Local `.env.local` (if asked)
+- Running SQL in Supabase SQL Editor when schema changes are needed
+
+Codex must provide the exact SQL when required.
+
+---
+
+## Routing / navigation rules
+- No route should 404 in production for known links.
+- Tabs must map to real routes (e.g. `battles` vs `battle`).
+- When linking to a battle detail page, Codex must confirm the route pattern matches the data (id/slug).
+
+---
+
+## Deployment rules
+- If production differs from local preview, Codex checks:
+  - env vars exist in Vercel
+  - build output logs
+  - route config
+  - basePath / redirects / middleware effects
+- Codex must not declare success until the deployed URL confirms the fix.
+
+---
+
+## Consent checkpoints
+Codex must stop and ask the user before:
+- Changing external account settings
+- Publishing anything publicly
+- Enabling paid features
+- Rotating keys / deleting data
+
+---
+
+## “One instruction at a time” user preference
+When directing the user for external steps (Supabase/Vercel), Codex must:
+- Give **one step only**
+- Wait for confirmation
+- Then give the next step
