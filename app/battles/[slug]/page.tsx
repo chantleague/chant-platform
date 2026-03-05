@@ -1,18 +1,17 @@
 import { notFound } from "next/navigation";
 import { supabase } from "@/app/lib/supabase";
-import { mockBattles } from "../../lib/mockBattles";
-import { mockClubs } from "../../lib/mockClubs"; // used for club fallback
+import { mockBattles } from "@/app/lib/mockBattles";
+import { mockClubs } from "@/app/lib/mockClubs";
 import type { Battle, Club } from "@/app/lib/types";
-import JoinBattleButton from "../../components/JoinBattleButton";
-import OfficialChantPacks from "../../components/OfficialChantPacks";
-import BattleVoteButton from "../../components/BattleVoteButton";
+import JoinBattleButton from "@/app/components/JoinBattleButton";
+import OfficialChantPacks from "@/app/components/OfficialChantPacks";
+import BattleVoteButton from "@/app/components/BattleVoteButton";
 
-export default async function Page({ params }: { params: { slug: string | string[] } }) {
+export default async function BattleDetailPage({ params }: { params: { slug: string | string[] } }) {
   const { slug: rawSlug } = params;
   const maybeSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
   const slug = (maybeSlug ?? "").toString().trim().toLowerCase();
 
-  // fetch battle from Supabase
   let battle: Battle | null = null;
   let homeClub: Club | null = null;
   let awayClub: Club | null = null;
@@ -32,14 +31,12 @@ export default async function Page({ params }: { params: { slug: string | string
     console.error("Battle query failed", err);
   }
 
-  // fallback to mock list if Supabase unavailable or battle missing
   if (!battle) {
     const mb = mockBattles.find((b) => (b.slug ?? "").toLowerCase() === slug);
     if (!mb) return notFound();
     battle = { ...mb, id: "", home_team: (mb.slug || "").split("-vs-")[0], away_team: (mb.slug || "").split("-vs-")[1] } as unknown as Battle;
   }
 
-  // club lookup
   try {
     const { data: h } = await supabase
       .from("clubs")
@@ -49,7 +46,6 @@ export default async function Page({ params }: { params: { slug: string | string
     if (h) homeClub = h as Club;
   } catch (e) {
     console.error("Error fetching home club", e);
-    // fallback to mock
     homeClub = mockClubs.find((c) => c.slug === battle.home_team) as Club | null;
   }
   try {
@@ -64,7 +60,6 @@ export default async function Page({ params }: { params: { slug: string | string
     awayClub = mockClubs.find((c) => c.slug === battle.away_team) as Club | null;
   }
 
-  // votes count
   try {
     const { count } = await supabase
       .from("votes")
@@ -98,7 +93,6 @@ export default async function Page({ params }: { params: { slug: string | string
         {battle.description && <p className="max-w-2xl text-sm text-zinc-400">{battle.description}</p>}
       </header>
 
-      {/* voting area */}
       <section className="grid grid-cols-2 gap-4">
         <div className="text-center">
           <h2 className="text-lg font-semibold text-zinc-50">
@@ -157,4 +151,3 @@ export default async function Page({ params }: { params: { slug: string | string
     </div>
   );
 }
-

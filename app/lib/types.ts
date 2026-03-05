@@ -5,8 +5,12 @@ export interface Battle {
   slug: string;
   title: string;
   description?: string;
-  home_team: string;
-  away_team: string;
+  // foreign keys to clubs (if schema has been updated)
+  home_club_id?: string;
+  away_club_id?: string;
+  // legacy string slugs for team names
+  home_team?: string;
+  away_team?: string;
   matchday?: number | null;
   status?: "upcoming" | "live" | "completed" | "finished";
   starts_at?: string | null;
@@ -32,7 +36,10 @@ export interface Vote {
   id: string;
   battle_id: string;
   club_slug: string;
-  user_id: string;
+  // legacy user_id field (previously used for anon identifier)
+  user_id?: string;
+  // new hash used to rate‑limit MVP votes
+  voter_hash?: string;
   created_at?: string;
 }
 

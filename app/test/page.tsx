@@ -49,7 +49,7 @@ export default async function TestPage() {
                     key={battle.id}
                     className="bg-slate-700 rounded-lg p-6 border border-slate-600"
                   >
-                    <h2 className="text-xl font-bold text-white mb-2">{(battle as any).title || battle.slug}</h2>
+                    <h2 className="text-xl font-bold text-white mb-2">{(battle as Battle).title || battle.slug}</h2>
                     {battle.description && (
                       <p className="text-gray-300 mb-3">{battle.description}</p>
                     )}

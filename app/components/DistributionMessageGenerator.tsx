@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/app/lib/supabase";
-import type { ChantPack } from "@/app/lib/types";
+// not using ChantPack type directly here
 
 // only minimal fields are fetched here
 interface MinimalChant {
