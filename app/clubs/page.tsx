@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { mockClubs } from "../lib/mockClubs";
 import { ClubCard } from "../components/ClubCard";
 
 interface Club {
@@ -11,17 +12,14 @@ interface Club {
 }
 
 export default async function ClubsPage() {
-  const { data: clubs, error } = await supabase
+  const { data: clubsData, error } = await supabase
     .from("clubs")
     .select("*");
 
+  let clubs = (clubsData as Club[] | null) || [];
   if (error) {
     console.error("Error fetching clubs:", error);
-    return (
-      <div className="p-6">
-        <p className="text-red-500 text-sm">Failed to load clubs</p>
-      </div>
-    );
+    clubs = mockClubs as unknown as Club[];
   }
 
   return (

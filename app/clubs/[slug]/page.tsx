@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { BattleCard } from "../../components/BattleCard";
+import { mockClubs } from "../../lib/mockClubs";
 
 interface Club {
   id: string;
@@ -24,15 +25,22 @@ export default async function ClubPage({ params }: { params: { slug: string | st
   const maybeSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
   const slug = (maybeSlug ?? "").toString().trim().toLowerCase();
 
-  const { data: club, error: clubError } = await supabase
+  const { data, error: clubError } = await supabase
     .from("clubs")
     .select("*")
     .eq("slug", slug)
     .single();
+  let club = data;
 
   if (clubError || !club) {
     console.error("Club fetch error", clubError);
-    return notFound();
+    // fallback to mock club when network issue occurs
+    const mock = mockClubs.find((c) => c.slug === slug);
+    if (mock) {
+      club = mock as unknown as typeof club;
+    } else {
+      return notFound();
+    }
   }
 
   const { data: rawBattles, error: battlesError } = await supabase
