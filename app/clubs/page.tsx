@@ -1,15 +1,7 @@
-import { supabase } from "../lib/supabase";
+import { supabase } from "@/app/lib/supabase";
 import { mockClubs } from "../lib/mockClubs";
 import { ClubCard } from "../components/ClubCard";
-
-interface Club {
-  id: string;
-  slug: string;
-  name: string;
-  description?: string;
-  fans?: number;
-  [key: string]: unknown;
-}
+import type { Club } from "../lib/types";
 
 export default async function ClubsPage() {
   const { data: clubsData, error } = await supabase

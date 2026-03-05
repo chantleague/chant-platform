@@ -1,21 +1,7 @@
 import { supabase } from "@/app/lib/supabase";
 import { LeaderboardTable } from "@/app/components/LeaderboardTable";
+import type { ChantWithMatch, FanRow } from "@/app/lib/types";
 
-interface ChantPack {
-  id: string;
-  match_id: string;
-  official: boolean;
-  created_at: string;
-  title: string;
-  description?: string;
-  audio_url?: string;
-  [key: string]: unknown;
-}
-
-interface ChantWithMatch extends ChantPack {
-  voteCount: number;
-  match_title?: string;
-}
 
 export default async function LeaderboardsPage() {
   // Fetch all chant packs
@@ -57,7 +43,6 @@ export default async function LeaderboardsPage() {
   packsWithVotes.sort((a, b) => b.voteCount - a.voteCount);
 
   // Calculate most active fans based on votes table
-  type FanRow = { position: number; name: string; metric: string; value: number };
   const fanRows: FanRow[] = [];
 
   try {

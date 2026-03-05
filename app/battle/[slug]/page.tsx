@@ -1,31 +1,11 @@
 import { notFound } from "next/navigation";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "@/app/lib/supabase";
 import { mockBattles } from "../../lib/mockBattles";
 import { mockClubs } from "../../lib/mockClubs"; // used for club fallback
+import type { Battle, Club } from "@/app/lib/types";
 import JoinBattleButton from "../../components/JoinBattleButton";
 import OfficialChantPacks from "../../components/OfficialChantPacks";
 import BattleVoteButton from "../../components/BattleVoteButton";
-
-interface Battle {
-  id: string;
-  slug: string;
-  title?: string;
-  description?: string;
-  home_team: string;
-  away_team: string;
-  status?: string;
-  stats: { chants: number; voters: number; peakDb: number; fansJoined?: number };
-  [key: string]: unknown;
-}
-
-interface Club {
-  id: string;
-  slug: string;
-  name: string;
-  description?: string;
-  fans?: number;
-  [key: string]: unknown;
-}
 
 export default async function Page({ params }: { params: { slug: string | string[] } }) {
   const { slug: rawSlug } = params;
@@ -148,7 +128,7 @@ export default async function Page({ params }: { params: { slug: string | string
             Chants Submitted
           </p>
           <p className="mt-1 text-2xl font-semibold text-emerald-400">
-            {battle.stats.chants.toLocaleString()}
+            {(battle.stats?.chants || 0).toLocaleString()}
           </p>
         </div>
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
@@ -156,7 +136,7 @@ export default async function Page({ params }: { params: { slug: string | string
             Total Voters
           </p>
           <p className="mt-1 text-2xl font-semibold text-sky-400">
-            {battle.stats.voters.toLocaleString()}
+            {(battle.stats?.voters || 0).toLocaleString()}
           </p>
         </div>
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
@@ -164,7 +144,7 @@ export default async function Page({ params }: { params: { slug: string | string
             Peak Volume
           </p>
           <p className="mt-1 text-2xl font-semibold text-zinc-50">
-            {battle.stats.peakDb}
+            {battle.stats?.peakDb || 0}
             <span className="ml-1 text-xs text-zinc-500">dB</span>
           </p>
         </div>

@@ -1,15 +1,6 @@
 import Link from "next/link";
 import { supabase } from "@/app/lib/supabase";
-
-interface Match {
-  id: string;
-  title: string;
-  home_team: string;
-  away_team: string;
-  status: string;
-  starts_at: string | null;
-  [key: string]: unknown;
-}
+import type { Battle } from "@/app/lib/types";
 
 export default async function Page() {
   const { data: battles, error } = await supabase
@@ -74,7 +65,7 @@ export default async function Page() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
-              {battles.map((battle: Match) => (
+              {battles.map((battle: Battle) => (
                 <tr key={battle.id} className="hover:bg-zinc-900/50 transition-colors">
                   <td className="px-6 py-4 text-sm text-zinc-50">{battle.title}</td>
                   <td className="px-6 py-4 text-sm text-zinc-400">
@@ -90,7 +81,9 @@ export default async function Page() {
                           : "bg-emerald-950/50 text-emerald-400"
                       }`}
                     >
-                      {battle.status.charAt(0).toUpperCase() + battle.status.slice(1)}
+                      {battle.status
+                        ? battle.status.charAt(0).toUpperCase() + battle.status.slice(1)
+                        : "Upcoming"}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-zinc-400">

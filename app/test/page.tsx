@@ -1,13 +1,7 @@
 // Smoke test page for verifying Supabase connectivity and route existence
 import { supabase } from '@/app/lib/supabase';
 
-interface Battle {
-  id: string;
-  name: string;
-  description?: string;
-  status?: string;
-  [key: string]: unknown;
-}
+import type { Battle } from "../lib/types";
 
 // server component – performs the query during SSR so that `curl` and
 // automated tests can verify results without relying on client-side JS.
@@ -55,7 +49,7 @@ export default async function TestPage() {
                     key={battle.id}
                     className="bg-slate-700 rounded-lg p-6 border border-slate-600"
                   >
-                    <h2 className="text-xl font-bold text-white mb-2">{battle.name}</h2>
+                    <h2 className="text-xl font-bold text-white mb-2">{(battle as any).title || battle.slug}</h2>
                     {battle.description && (
                       <p className="text-gray-300 mb-3">{battle.description}</p>
                     )}

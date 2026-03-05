@@ -1,21 +1,7 @@
 import { BattleCard } from "../components/BattleCard";
-import { supabase } from "../lib/supabase";
+import { supabase } from "@/app/lib/supabase";
 import { mockBattles } from "../lib/mockBattles";
-
-interface Match {
-  id: string;
-  slug: string;
-  title?: string;
-  description?: string;
-  home_team?: string;
-  away_team?: string;
-  // Supabase stores status as a string, but the UI only accepts these
-  // specific values. Narrow the type so callers must handle defaults.
-  status?: "live" | "upcoming" | "finished";
-  starts_at?: string | null;
-  stats?: { fansJoined?: number };
-  [key: string]: unknown;
-}
+import type { Battle } from "../lib/types";
 
 export default async function BattlesPage() {
   const { data: battlesData, error } = await supabase
@@ -23,11 +9,11 @@ export default async function BattlesPage() {
     .select("*")
     .order("starts_at", { ascending: false });
 
-  let battles = (battlesData as Match[] | null) || [];
+  let battles = (battlesData as Battle[] | null) || [];
   if (error) {
     console.error("Error fetching battles:", error);
     // fall back to mock data so UI still shows something during network issues
-    battles = mockBattles as unknown as Match[];
+    battles = mockBattles as unknown as Battle[];
   }
 
   return (
@@ -36,7 +22,7 @@ export default async function BattlesPage() {
         <h1 className="text-2xl font-bold text-zinc-50">Battles</h1>
       </div>
       <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {(battles || []).map((battle: Match) => {
+        {(battles || []).map((battle: Battle) => {
           const slugVal = (battle.slug as string) || "";
           const [clubA, clubB] = slugVal.split("-vs-");
           const clubDisplay = `${clubA.replace(/-/g, " ")} vs ${clubB.replace(/-/g, " ")}`;

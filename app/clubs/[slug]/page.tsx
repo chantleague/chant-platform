@@ -1,24 +1,9 @@
 import { notFound } from "next/navigation";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "@/app/lib/supabase";
 import { BattleCard } from "../../components/BattleCard";
 import { mockClubs } from "../../lib/mockClubs";
+import type { Club, Battle } from "@/app/lib/types";
 
-interface Club {
-  id: string;
-  slug: string;
-  name: string;
-  description?: string;
-  fans?: number;
-  [key: string]: unknown;
-}
-
-interface Match {
-  id: string;
-  slug: string;
-  description?: string;
-  stats?: { fansJoined?: number };
-  [key: string]: unknown;
-}
 
 export default async function ClubPage({ params }: { params: { slug: string | string[] } }) {
   const { slug: rawSlug } = params;
@@ -30,24 +15,27 @@ export default async function ClubPage({ params }: { params: { slug: string | st
     .select("*")
     .eq("slug", slug)
     .single();
-  let club = data;
+  let club: Club | null = data as Club | null;
 
   if (clubError || !club) {
     console.error("Club fetch error", clubError);
     // fallback to mock club when network issue occurs
     const mock = mockClubs.find((c) => c.slug === slug);
     if (mock) {
-      club = mock as unknown as typeof club;
+      club = mock as unknown as Club;
     } else {
       return notFound();
     }
+  }
+  if (!club) {
+    return notFound();
   }
 
   const { data: rawBattles, error: battlesError } = await supabase
     .from("matches")
     .select("*")
     .ilike("slug", `%${slug}%`);
-  const normalizedBattles: Match[] = (rawBattles as Match[] | null) || [];
+  const normalizedBattles: Battle[] = (rawBattles as Battle[] | null) || [];
 
   if (battlesError) {
     console.error("Error fetching related battles:", battlesError);
@@ -69,7 +57,7 @@ export default async function ClubPage({ params }: { params: { slug: string | st
           <p className="text-sm text-zinc-400">No battles found for this club.</p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {normalizedBattles.map((b: Match) => {
+            {normalizedBattles.map((b: Battle) => {
               const slugVal = b.slug || "";
               const [clubA, clubB] = slugVal.split("-vs-");
               const clubDisplay = `${clubA.replace(/-/g, " ")} vs ${clubB.replace(/-/g, " ")}`;

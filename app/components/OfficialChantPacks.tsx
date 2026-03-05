@@ -1,16 +1,6 @@
 import { supabase } from "@/app/lib/supabase";
 import VoteButton from "./VoteButton";
-
-interface ChantPack {
-  id: string;
-  match_id: string;
-  official: boolean;
-  created_at: string;
-  title: string;
-  description?: string;
-  audio_url?: string;
-  [key: string]: unknown;
-}
+import type { ChantPack } from "@/app/lib/types";
 
 interface ChantPackWithVotes extends ChantPack {
   voteCount: number;

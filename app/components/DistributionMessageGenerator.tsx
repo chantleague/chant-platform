@@ -2,12 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/app/lib/supabase";
+import type { ChantPack } from "@/app/lib/types";
 
-interface ChantPack {
+// only minimal fields are fetched here
+interface MinimalChant {
   id: string;
   title: string;
   description: string;
 }
+
+// interface DistributionMessages stays local
 
 interface DistributionMessages {
   whatsapp: string;
@@ -15,7 +19,7 @@ interface DistributionMessages {
   youtube: string;
 }
 
-const generateMessages = (pack: ChantPack): DistributionMessages => {
+const generateMessages = (pack: MinimalChant): DistributionMessages => {
   return {
     whatsapp: `🎵 Official Chant Alert! 🎵\n\nCheck out "${pack.title}" - the official club chant for this matchday!\n\n${pack.description}\n\nDiscover more chants and join the battle at our chant platform.`,
     tiktok: `🔥 NEW Official Chant Drop! 🔥\n\n"${pack.title}"\n\nJoin thousands of fans and unleash your voice! 🎤\n\n#OfficialChant #MatchdayVibes #FansUnited`,
@@ -24,7 +28,7 @@ const generateMessages = (pack: ChantPack): DistributionMessages => {
 };
 
 export default function DistributionMessageGenerator({ battleId }: { battleId: string }) {
-  const [chantPacks, setChantPacks] = useState<ChantPack[]>([]);
+  const [chantPacks, setChantPacks] = useState<MinimalChant[]>([]);
   const [selectedPack, setSelectedPack] = useState<string>("");
   const [messages, setMessages] = useState<DistributionMessages | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -39,10 +43,11 @@ export default function DistributionMessageGenerator({ battleId }: { battleId: s
         .eq("official", true);
 
       if (data) {
-        setChantPacks(data);
+        // cast to minimal structure
+        setChantPacks(data as MinimalChant[]);
         if (data.length > 0) {
-          setSelectedPack(data[0].id);
-          setMessages(generateMessages(data[0]));
+          setSelectedPack((data as MinimalChant[])[0].id);
+          setMessages(generateMessages((data as MinimalChant[])[0]));
         }
       }
       setIsLoading(false);
