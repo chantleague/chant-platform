@@ -31,7 +31,23 @@ export default async function FanSubmittedChants({
   battleId,
 }: FanSubmittedChantsProps) {
   if (!battleId) {
-    return null;
+    return (
+      <div className="space-y-6">
+        <section className="space-y-3">
+          <h3 className="text-base font-semibold text-zinc-50">Top Chants</h3>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
+            No chants available yet.
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h3 className="text-base font-semibold text-zinc-50">New Chants</h3>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
+            No chants available yet.
+          </div>
+        </section>
+      </div>
+    );
   }
 
   let data: FanChant[] | null = null;
@@ -78,8 +94,20 @@ export default async function FanSubmittedChants({
   const chants = (data as FanChant[] | null) || [];
   if (chants.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
-        No fan chants submitted yet. Be the first to drop one.
+      <div className="space-y-6">
+        <section className="space-y-3">
+          <h3 className="text-base font-semibold text-zinc-50">Top Chants</h3>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
+            No fan chants submitted yet. Be the first to drop one.
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h3 className="text-base font-semibold text-zinc-50">New Chants</h3>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
+            New fan chants will appear here.
+          </div>
+        </section>
       </div>
     );
   }
