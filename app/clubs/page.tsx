@@ -9,8 +9,10 @@ export default async function ClubsPage() {
     .select("*");
 
   let clubs = (clubsData as Club[] | null) || [];
-  if (error) {
-    console.error("Error fetching clubs:", error);
+  if (error || clubs.length === 0) {
+    if (error) {
+      console.error("Error fetching clubs:", error);
+    }
     clubs = mockClubs as unknown as Club[];
   }
 

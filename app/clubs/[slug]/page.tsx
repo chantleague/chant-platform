@@ -5,8 +5,14 @@ import { mockClubs } from "../../lib/mockClubs";
 import type { Club, Battle } from "@/app/lib/types";
 
 
-export default async function ClubPage({ params }: { params: { slug: string | string[] } }) {
-  const { slug: rawSlug } = params;
+type ClubParams = { slug: string | string[] };
+
+export default async function ClubPage({
+  params,
+}: {
+  params: ClubParams | Promise<ClubParams>;
+}) {
+  const { slug: rawSlug } = await Promise.resolve(params);
   const maybeSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
   const slug = (maybeSlug ?? "").toString().trim().toLowerCase();
 
