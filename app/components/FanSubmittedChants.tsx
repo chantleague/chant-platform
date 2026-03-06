@@ -85,8 +85,24 @@ export default async function FanSubmittedChants({
   if (error) {
     console.error("Error fetching fan chants", error);
     return (
-      <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4 text-sm text-red-300">
-        Could not load fan chants right now.
+      <div className="space-y-6">
+        <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4 text-sm text-red-300">
+          Could not load fan chants right now.
+        </div>
+
+        <section className="space-y-3">
+          <h3 className="text-base font-semibold text-zinc-50">Top Chants</h3>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
+            Top chants will appear here once data is available.
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h3 className="text-base font-semibold text-zinc-50">New Chants</h3>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
+            New chants will appear here once data is available.
+          </div>
+        </section>
       </div>
     );
   }
