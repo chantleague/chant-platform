@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { submitFanChant } from "@/app/battles/[slug]/chant-actions";
+import ChantAudioUpload from "@/components/ChantAudioUpload";
 
 interface FanChantSubmissionFormProps {
   battleId: string;
@@ -13,6 +14,12 @@ interface FanChantSubmissionFormProps {
 interface Feedback {
   type: "success" | "error";
   text: string;
+}
+
+interface SubmitFanChantResponse {
+  success: boolean;
+  message: string;
+  chantId?: string;
 }
 
 function getOrCreateFanId() {
@@ -33,6 +40,10 @@ export default function FanChantSubmissionForm({
   const [title, setTitle] = useState("");
   const [lyrics, setLyrics] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [fanId, setFanId] = useState(() =>
+    typeof window === "undefined" ? "" : getOrCreateFanId(),
+  );
+  const [latestChantId, setLatestChantId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   if (!battleId) {
@@ -59,22 +70,25 @@ export default function FanChantSubmissionForm({
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const fanId = getOrCreateFanId();
+    const activeFanId = fanId || getOrCreateFanId();
+    if (!fanId) {
+      setFanId(activeFanId);
+    }
 
-    if (!fanId || isPending) {
+    if (!activeFanId || isPending) {
       return;
     }
 
     setFeedback(null);
 
     startTransition(async () => {
-      const result = await submitFanChant({
+      const result = (await submitFanChant({
         battleId,
         battleSlug,
-        userId: fanId,
+        userId: activeFanId,
         title,
         lyrics,
-      });
+      })) as SubmitFanChantResponse;
 
       setFeedback({
         type: result.success ? "success" : "error",
@@ -84,6 +98,7 @@ export default function FanChantSubmissionForm({
       if (result.success) {
         setTitle("");
         setLyrics("");
+        setLatestChantId(result.chantId || null);
       }
     });
   };
@@ -147,6 +162,10 @@ export default function FanChantSubmissionForm({
       >
         {isPending ? "Submitting..." : "Submit Chant"}
       </button>
+
+      {latestChantId && fanId && (
+        <ChantAudioUpload chantId={latestChantId} battleSlug={battleSlug} userId={fanId} />
+      )}
     </form>
   );
 }

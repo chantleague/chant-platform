@@ -96,9 +96,14 @@ export default async function FanSubmittedChants({
               <h3 className="text-sm font-semibold text-zinc-50">{chant.title}</h3>
               <p className="text-sm whitespace-pre-wrap text-zinc-300">{chant.lyrics}</p>
               {chant.audio_url && (
-                <audio controls preload="metadata" className="w-full max-w-md" src={chant.audio_url}>
-                  Your browser does not support the audio element.
-                </audio>
+                <div className="space-y-1">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+                    Fan Recording
+                  </p>
+                  <audio controls preload="metadata" className="w-full max-w-md" src={chant.audio_url}>
+                    Your browser does not support the audio element.
+                  </audio>
+                </div>
               )}
               <p className="text-xs text-zinc-500">
                 Submitted by {maskSubmitter(chant.submitted_by)}

@@ -27,9 +27,14 @@ export default function ChantList({ chants }: { chants: ChantListItem[] }) {
             </p>
 
             {chant.audio_url && (
-              <audio controls preload="metadata" className="w-full" src={chant.audio_url}>
-                Your browser does not support the audio element.
-              </audio>
+              <div className="space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+                  Fan Recording
+                </p>
+                <audio controls preload="metadata" className="w-full" src={chant.audio_url}>
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
             )}
           </div>
         </article>

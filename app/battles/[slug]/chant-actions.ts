@@ -16,6 +16,19 @@ interface SubmitFanChantInput {
 interface SubmitFanChantResult {
   success: boolean;
   message: string;
+  chantId?: string;
+}
+
+interface LinkFanChantAudioInput {
+  chantId: string;
+  battleSlug: string;
+  userId: string;
+  audioUrl: string;
+}
+
+interface LinkFanChantAudioResult {
+  success: boolean;
+  message: string;
 }
 
 function isSubmissionWindowOpen(status?: string | null, startsAt?: string | null) {
@@ -116,7 +129,9 @@ export async function submitFanChant(
 
     const chantPackId = pack.id as string;
 
-    const { error: chantError } = await supabase.from("chants").insert([
+    const { data: chantRow, error: chantError } = await supabase
+      .from("chants")
+      .insert([
       {
         battle_id: battleId,
         chant_pack_id: chantPackId,
@@ -124,7 +139,9 @@ export async function submitFanChant(
         lyrics,
         submitted_by: userId,
       },
-    ]);
+      ])
+      .select("id")
+      .single();
 
     if (chantError) {
       console.error("submitFanChant: failed creating chant", chantError);
@@ -148,9 +165,68 @@ export async function submitFanChant(
 
     revalidatePath(`/battles/${battleSlug}`);
 
-    return { success: true, message: "Chant submitted. Rally your fans to vote." };
+    return {
+      success: true,
+      message: "Chant submitted. Rally your fans to vote.",
+      chantId: chantRow?.id ? String(chantRow.id) : undefined,
+    };
   } catch (error) {
     console.error("submitFanChant: unexpected error", error);
     return { success: false, message: "Could not submit chant right now." };
+  }
+}
+
+export async function linkFanChantAudio(
+  input: LinkFanChantAudioInput,
+): Promise<LinkFanChantAudioResult> {
+  const chantId = input.chantId?.trim();
+  const battleSlug = input.battleSlug?.trim();
+  const userId = input.userId?.trim();
+  const audioUrl = input.audioUrl?.trim();
+
+  if (!chantId || !battleSlug || !userId || !audioUrl) {
+    return { success: false, message: "Missing chant audio details." };
+  }
+
+  try {
+    const { data: chantRow, error: chantFetchError } = await supabase
+      .from("chants")
+      .select("id, submitted_by")
+      .eq("id", chantId)
+      .single();
+
+    if (chantFetchError || !chantRow?.id) {
+      console.error("linkFanChantAudio: chant lookup failed", chantFetchError);
+      return { success: false, message: "Could not find the chant to attach audio." };
+    }
+
+    if (String(chantRow.submitted_by || "") !== userId) {
+      return { success: false, message: "Only the chant submitter can attach audio." };
+    }
+
+    const { error: updateError } = await supabase
+      .from("chants")
+      .update({ audio_url: audioUrl })
+      .eq("id", chantId);
+
+    if (updateError) {
+      console.error("linkFanChantAudio: update failed", updateError);
+      if ((updateError.message || "").toLowerCase().includes("audio_url")) {
+        return {
+          success: false,
+          message: "Audio column is unavailable. Run the latest DB migrations.",
+        };
+      }
+
+      return { success: false, message: "Could not save the chant audio link." };
+    }
+
+    revalidatePath(`/battles/${battleSlug}`);
+    revalidatePath("/admin/chants");
+
+    return { success: true, message: "Fan chant audio linked successfully." };
+  } catch (error) {
+    console.error("linkFanChantAudio: unexpected error", error);
+    return { success: false, message: "Could not link chant audio right now." };
   }
 }
