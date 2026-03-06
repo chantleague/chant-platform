@@ -10,6 +10,15 @@ interface FanChantWithVotes extends FanChant {
   voteCount: number;
 }
 
+function toTimestamp(value?: string | null) {
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
 function maskSubmitter(submitter: string) {
   if (submitter.length <= 14) {
     return submitter;
@@ -30,11 +39,14 @@ export default async function FanSubmittedChants({
 
   const withAudio = await supabase
     .from("chants")
-    .select("id, battle_id, chant_pack_id, title, lyrics, audio_url, submitted_by, created_at")
+    .select("id, battle_id, chant_pack_id, club_id, title, chant_text, lyrics, audio_url, submitted_by, created_at")
     .eq("battle_id", battleId)
     .order("created_at", { ascending: false });
 
-  if (withAudio.error && (withAudio.error.message || "").toLowerCase().includes("audio_url")) {
+  if (
+    withAudio.error &&
+    /(audio_url|chant_text|club_id)/i.test(withAudio.error.message || "")
+  ) {
     const fallback = await supabase
       .from("chants")
       .select("id, battle_id, chant_pack_id, title, lyrics, submitted_by, created_at")
@@ -44,6 +56,8 @@ export default async function FanSubmittedChants({
     data =
       ((fallback.data as FanChant[] | null) || []).map((chant) => ({
         ...chant,
+        club_id: null,
+        chant_text: chant.lyrics,
         audio_url: null,
       })) || null;
     error = fallback.error ? { message: fallback.error.message } : null;
@@ -84,38 +98,73 @@ export default async function FanSubmittedChants({
     });
   }
 
-  return (
-    <div className="space-y-3">
-      {chantsWithVotes.map((chant) => (
-        <article
-          key={chant.id}
-          className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4"
-        >
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-zinc-50">{chant.title}</h3>
-              <p className="text-sm whitespace-pre-wrap text-zinc-300">{chant.lyrics}</p>
-              {chant.audio_url && (
-                <div className="space-y-1">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">
-                    Fan Recording
-                  </p>
-                  <audio controls preload="metadata" className="w-full max-w-md" src={chant.audio_url}>
-                    Your browser does not support the audio element.
-                  </audio>
-                </div>
-              )}
-              <p className="text-xs text-zinc-500">
-                Submitted by {maskSubmitter(chant.submitted_by)}
-              </p>
-            </div>
+  const topChants = [...chantsWithVotes]
+    .sort((a, b) => {
+      if (b.voteCount !== a.voteCount) {
+        return b.voteCount - a.voteCount;
+      }
 
-            <div className="flex shrink-0 items-center">
-              <VoteButton chantPackId={chant.chant_pack_id} voteCount={chant.voteCount} />
-            </div>
+      return toTimestamp(b.created_at) - toTimestamp(a.created_at);
+    })
+    .slice(0, 5);
+
+  const topIds = new Set(topChants.map((chant) => chant.id));
+  const newestChants = [...chantsWithVotes]
+    .filter((chant) => !topIds.has(chant.id))
+    .sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at));
+
+  const fallbackNewest = newestChants.length > 0
+    ? newestChants
+    : [...chantsWithVotes].sort(
+        (a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at),
+      );
+
+  function renderChantCard(chant: FanChantWithVotes) {
+    const chantText = (chant.chant_text || chant.lyrics || "").trim();
+
+    return (
+      <article
+        key={chant.id}
+        className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4"
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-zinc-50">{chant.title}</h3>
+            <p className="text-sm whitespace-pre-wrap text-zinc-300">{chantText}</p>
+            {chant.audio_url && (
+              <div className="space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+                  Fan Recording
+                </p>
+                <audio controls preload="metadata" className="w-full max-w-md" src={chant.audio_url}>
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+            )}
+            <p className="text-xs text-zinc-500">
+              Submitted by {maskSubmitter(chant.submitted_by)}
+            </p>
           </div>
-        </article>
-      ))}
+
+          <div className="flex shrink-0 items-center">
+            <VoteButton chantPackId={chant.chant_pack_id} voteCount={chant.voteCount} />
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="space-y-3">
+        <h3 className="text-base font-semibold text-zinc-50">Top Chants</h3>
+        {topChants.map((chant) => renderChantCard(chant))}
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-base font-semibold text-zinc-50">New Chants</h3>
+        {fallbackNewest.map((chant) => renderChantCard(chant))}
+      </section>
     </div>
   );
 }

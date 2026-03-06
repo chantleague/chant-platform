@@ -9,6 +9,7 @@ interface FanChantSubmissionFormProps {
   battleSlug: string;
   submissionOpen: boolean;
   startsAt?: string | null;
+  simpleMode?: boolean;
 }
 
 interface Feedback {
@@ -36,6 +37,7 @@ export default function FanChantSubmissionForm({
   battleSlug,
   submissionOpen,
   startsAt,
+  simpleMode = false,
 }: FanChantSubmissionFormProps) {
   const [title, setTitle] = useState("");
   const [lyrics, setLyrics] = useState("");
@@ -86,8 +88,9 @@ export default function FanChantSubmissionForm({
         battleId,
         battleSlug,
         userId: activeFanId,
-        title,
+        title: simpleMode ? undefined : title,
         lyrics,
+        chantText: lyrics,
       })) as SubmitFanChantResponse;
 
       setFeedback({
@@ -124,24 +127,26 @@ export default function FanChantSubmissionForm({
         </div>
       )}
 
-      <div className="space-y-2">
-        <label htmlFor="fan-chant-title" className="block text-xs uppercase tracking-[0.14em] text-zinc-500">
-          Chant Title
-        </label>
-        <input
-          id="fan-chant-title"
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          required
-          maxLength={80}
-          placeholder="e.g., North Bank Roar"
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-50 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none"
-        />
-      </div>
+      {!simpleMode && (
+        <div className="space-y-2">
+          <label htmlFor="fan-chant-title" className="block text-xs uppercase tracking-[0.14em] text-zinc-500">
+            Chant Title
+          </label>
+          <input
+            id="fan-chant-title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            required
+            maxLength={80}
+            placeholder="e.g., North Bank Roar"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-50 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none"
+          />
+        </div>
+      )}
 
       <div className="space-y-2">
         <label htmlFor="fan-chant-lyrics" className="block text-xs uppercase tracking-[0.14em] text-zinc-500">
-          Chant Lines
+          {simpleMode ? "chant_text" : "Chant Lines"}
         </label>
         <textarea
           id="fan-chant-lyrics"
@@ -150,7 +155,7 @@ export default function FanChantSubmissionForm({
           required
           maxLength={500}
           rows={4}
-          placeholder="Write your chant lines here..."
+          placeholder={simpleMode ? "Write your chant text here..." : "Write your chant lines here..."}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-50 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none resize-none"
         />
       </div>

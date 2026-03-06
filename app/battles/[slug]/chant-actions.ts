@@ -9,8 +9,10 @@ interface SubmitFanChantInput {
   battleId: string;
   battleSlug: string;
   userId: string;
-  title: string;
-  lyrics: string;
+  title?: string;
+  lyrics?: string;
+  chantText?: string;
+  clubId?: string;
 }
 
 interface SubmitFanChantResult {
@@ -55,14 +57,23 @@ export async function submitFanChant(
   const battleId = input.battleId?.trim();
   const battleSlug = input.battleSlug?.trim();
   const userId = input.userId?.trim();
-  const title = input.title?.trim().slice(0, 80);
-  const lyrics = input.lyrics?.trim().slice(0, 500);
+  const clubId = input.clubId?.trim() || null;
+  const chantText = (input.chantText || input.lyrics || "").trim().slice(0, 500);
 
-  if (!battleId || !battleSlug || !userId || !title || !lyrics) {
+  const requestedTitle = (input.title || "").trim().slice(0, 80);
+  const inferredTitle = chantText
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 5)
+    .join(" ")
+    .trim();
+  const title = (requestedTitle || inferredTitle || "Fan Chant").slice(0, 80);
+
+  if (!battleId || !battleSlug || !userId || !title || !chantText) {
     return { success: false, message: "Missing chant submission information." };
   }
 
-  if (title.length < 3 || lyrics.length < 8) {
+  if (title.length < 3 || chantText.length < 8) {
     return {
       success: false,
       message: "Please add a chant title and at least one full chant line.",
@@ -115,7 +126,7 @@ export async function submitFanChant(
         {
           match_id: battleId,
           title,
-          description: lyrics,
+          description: chantText,
           official: false,
         },
       ])
@@ -129,19 +140,57 @@ export async function submitFanChant(
 
     const chantPackId = pack.id as string;
 
-    const { data: chantRow, error: chantError } = await supabase
+    const legacyInsertPayload: Record<string, unknown> = {
+      battle_id: battleId,
+      chant_pack_id: chantPackId,
+      title,
+      lyrics: chantText,
+      submitted_by: userId,
+    };
+
+    const audioInsertPayload: Record<string, unknown> = {
+      ...legacyInsertPayload,
+      audio_url: null,
+    };
+
+    const extendedInsertPayload: Record<string, unknown> = {
+      ...audioInsertPayload,
+      club_id: clubId,
+      chant_text: chantText,
+    };
+
+    const initialInsert = await supabase
       .from("chants")
       .insert([
-      {
-        battle_id: battleId,
-        chant_pack_id: chantPackId,
-        title,
-        lyrics,
-        submitted_by: userId,
-      },
+        extendedInsertPayload,
       ])
       .select("id")
       .single();
+
+    let chantRow = initialInsert.data;
+    let chantError = initialInsert.error;
+
+    if (chantError) {
+      const fallbackInsert = await supabase
+        .from("chants")
+        .insert([audioInsertPayload])
+        .select("id")
+        .single();
+
+      chantRow = fallbackInsert.data;
+      chantError = fallbackInsert.error;
+
+      if (chantError && /audio_url/i.test(chantError.message || "")) {
+        const legacyFallbackInsert = await supabase
+          .from("chants")
+          .insert([legacyInsertPayload])
+          .select("id")
+          .single();
+
+        chantRow = legacyFallbackInsert.data;
+        chantError = legacyFallbackInsert.error;
+      }
+    }
 
     if (chantError) {
       console.error("submitFanChant: failed creating chant", chantError);
@@ -164,6 +213,7 @@ export async function submitFanChant(
     }
 
     revalidatePath(`/battles/${battleSlug}`);
+    revalidatePath(`/battle/${battleSlug}`);
 
     return {
       success: true,
@@ -222,6 +272,7 @@ export async function linkFanChantAudio(
     }
 
     revalidatePath(`/battles/${battleSlug}`);
+    revalidatePath(`/battle/${battleSlug}`);
     revalidatePath("/admin/chants");
 
     return { success: true, message: "Fan chant audio linked successfully." };

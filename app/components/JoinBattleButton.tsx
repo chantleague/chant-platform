@@ -2,11 +2,24 @@
 
 import { useState } from "react";
 
-export default function JoinBattleButton() {
+interface JoinBattleButtonProps {
+  targetId?: string;
+}
+
+export default function JoinBattleButton({ targetId }: JoinBattleButtonProps) {
   const [fansJoined, setFansJoined] = useState(1);
 
   const handleJoinBattle = () => {
     setFansJoined((prev) => prev + 1);
+
+    if (!targetId) {
+      return;
+    }
+
+    const element = document.getElementById(targetId);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   };
 
   return (
@@ -23,7 +36,7 @@ export default function JoinBattleButton() {
         onClick={handleJoinBattle}
         className="w-full rounded-lg bg-purple-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-purple-500 active:bg-purple-700"
       >
-        Join Battle
+        {targetId ? "Join Battle & Submit Chant" : "Join Battle"}
       </button>
     </div>
   );

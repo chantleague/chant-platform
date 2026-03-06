@@ -7,6 +7,8 @@ export type ClubCardProps = {
 };
 
 export function ClubCard({ slug, name, fans }: ClubCardProps) {
+  const fanCount = Number.isFinite(Number(fans)) ? Number(fans) : 0;
+
   return (
     <Link
       href={`/clubs/${slug}`}
@@ -15,7 +17,7 @@ export function ClubCard({ slug, name, fans }: ClubCardProps) {
       <h3 className="text-sm font-semibold text-zinc-50">{name}</h3>
       <p className="mt-2 text-xs text-zinc-400">Total fans</p>
       <p className="mt-1 text-2xl font-semibold text-emerald-400">
-        {fans.toLocaleString()}
+        {fanCount.toLocaleString()}
       </p>
     </Link>
   );

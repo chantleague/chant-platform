@@ -6,6 +6,8 @@ import type { Battle, Club } from "@/app/lib/types";
 import JoinBattleButton from "../../components/JoinBattleButton";
 import OfficialChantPacks from "../../components/OfficialChantPacks";
 import BattleVoteButton from "../../components/BattleVoteButton";
+import FanChantSubmissionForm from "@/app/components/FanChantSubmissionForm";
+import FanSubmittedChants from "@/app/components/FanSubmittedChants";
 
 type BattleParams = { slug: string | string[] };
 
@@ -106,6 +108,12 @@ export default async function Page({
     console.error("Error counting away votes", error);
   }
 
+  const battleId = battle.id || "";
+  const normalizedStatus = (battle.status || "").toString().toLowerCase();
+  const submissionWindowOpen =
+    Boolean(battleId) &&
+    (normalizedStatus === "" || normalizedStatus === "upcoming");
+
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -170,7 +178,28 @@ export default async function Page({
             <span className="ml-1 text-xs text-zinc-500">dB</span>
           </p>
         </div>
-        <JoinBattleButton />
+        <JoinBattleButton targetId="submit-chant-section" />
+      </section>
+
+      <section id="submit-chant-section" className="space-y-4">
+        <div className="space-y-1">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
+            Fan Chants
+          </p>
+          <h2 className="text-lg font-semibold tracking-tight text-zinc-50">
+            Submit Your Chant
+          </h2>
+        </div>
+
+        <FanChantSubmissionForm
+          battleId={battleId}
+          battleSlug={slug}
+          submissionOpen={submissionWindowOpen}
+          startsAt={battle.starts_at || null}
+          simpleMode
+        />
+
+        <FanSubmittedChants battleId={battleId} />
       </section>
 
       <OfficialChantPacks matchId={battle.id || slug} />

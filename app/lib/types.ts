@@ -63,7 +63,9 @@ export interface FanChant {
   id: string;
   battle_id: string;
   chant_pack_id: string;
+  club_id?: string | null;
   title: string;
+  chant_text?: string | null;
   lyrics: string;
   audio_url?: string | null;
   submitted_by: string;
