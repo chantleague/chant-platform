@@ -173,7 +173,7 @@ export default async function Page({
         <JoinBattleButton />
       </section>
 
-      <OfficialChantPacks matchId={slug} />
+      <OfficialChantPacks matchId={battle.id || slug} />
     </div>
   );
 }

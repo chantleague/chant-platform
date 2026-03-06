@@ -167,7 +167,7 @@ export default async function BattleDetailPage({
         <JoinBattleButton />
       </section>
 
-      <OfficialChantPacks matchId={slug} />
+      <OfficialChantPacks matchId={battle.id || slug} />
     </div>
   );
 }
