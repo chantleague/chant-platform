@@ -59,6 +59,26 @@ export interface ChantWithMatch extends ChantPack {
   match_title?: string;
 }
 
+export interface FanChant {
+  id: string;
+  battle_id: string;
+  chant_pack_id: string;
+  title: string;
+  lyrics: string;
+  audio_url?: string | null;
+  submitted_by: string;
+  created_at: string;
+}
+
+export interface Fixture {
+  id: string;
+  home_club_id: string;
+  away_club_id: string;
+  match_date: string;
+  league: string;
+  created_at?: string;
+}
+
 // helper for leaderboard rows (not exported widely)
 export interface FanRow {
   position: number;
