@@ -1,3 +1,5 @@
+import { CANONICAL_CLUB_REGISTRY } from "./canonicalClubRegistry";
+
 export type Club = {
   slug: string;
   name: string;
@@ -5,7 +7,7 @@ export type Club = {
   fans: number;
 };
 
-export const mockClubs: Club[] = [
+const featuredMockClubs: Club[] = [
   {
     slug: "arsenal",
     name: "Arsenal FC",
@@ -55,3 +57,20 @@ export const mockClubs: Club[] = [
     fans: 3981234,
   },
 ];
+
+const featuredBySlug = new Map(featuredMockClubs.map((club) => [club.slug, club]));
+
+// Merge richer featured mocks with the canonical multi-league registry recovered from history.
+export const mockClubs: Club[] = CANONICAL_CLUB_REGISTRY.map((club) => {
+  const featured = featuredBySlug.get(club.slug);
+  if (featured) {
+    return featured;
+  }
+
+  return {
+    slug: club.slug,
+    name: club.displayName,
+    description: `${club.displayName} supporters on Chant League.`,
+    fans: 0,
+  };
+});

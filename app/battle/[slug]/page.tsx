@@ -7,8 +7,14 @@ import JoinBattleButton from "../../components/JoinBattleButton";
 import OfficialChantPacks from "../../components/OfficialChantPacks";
 import BattleVoteButton from "../../components/BattleVoteButton";
 
-export default async function Page({ params }: { params: { slug: string | string[] } }) {
-  const { slug: rawSlug } = params;
+type BattleParams = { slug: string | string[] };
+
+export default async function Page({
+  params,
+}: {
+  params: BattleParams | Promise<BattleParams>;
+}) {
+  const { slug: rawSlug } = await Promise.resolve(params);
   const maybeSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
   const slug = (maybeSlug ?? "").toString().trim().toLowerCase();
 
@@ -41,24 +47,38 @@ export default async function Page({ params }: { params: { slug: string | string
 
   // club lookup
   try {
-    const { data: h } = await supabase
+    const { data: h, error: homeErr } = await supabase
       .from("clubs")
       .select("*")
       .eq("slug", battle.home_team)
       .single();
-    if (h) homeClub = h as Club;
+    if (h) {
+      homeClub = h as Club;
+    } else {
+      if (homeErr) {
+        console.error("Error fetching home club", homeErr);
+      }
+      homeClub = mockClubs.find((c) => c.slug === battle.home_team) as Club | null;
+    }
   } catch (e) {
     console.error("Error fetching home club", e);
     // fallback to mock
     homeClub = mockClubs.find((c) => c.slug === battle.home_team) as Club | null;
   }
   try {
-    const { data: a } = await supabase
+    const { data: a, error: awayErr } = await supabase
       .from("clubs")
       .select("*")
       .eq("slug", battle.away_team)
       .single();
-    if (a) awayClub = a as Club;
+    if (a) {
+      awayClub = a as Club;
+    } else {
+      if (awayErr) {
+        console.error("Error fetching away club", awayErr);
+      }
+      awayClub = mockClubs.find((c) => c.slug === battle.away_team) as Club | null;
+    }
   } catch (e) {
     console.error("Error fetching away club", e);
     awayClub = mockClubs.find((c) => c.slug === battle.away_team) as Club | null;
@@ -153,7 +173,7 @@ export default async function Page({ params }: { params: { slug: string | string
         <JoinBattleButton />
       </section>
 
-      <OfficialChantPacks matchId={slug} />
+      <OfficialChantPacks matchId={battle.id || slug} />
     </div>
   );
 }

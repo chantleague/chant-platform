@@ -12,14 +12,33 @@ interface VoteResult {
 export async function voteMVP(
   battleId: string,
   clubSlug: string,
-  voterHash: string,
+  userId: string,
   battleSlug: string
 ): Promise<VoteResult> {
   "use server";
 
   // quick sanity checks
-  if (!battleId || !clubSlug || !voterHash) {
+  if (!battleId || !clubSlug || !userId) {
     return { success: false, message: "Missing vote information." };
+  }
+
+  // restore stricter legacy rule: one vote per user per club per battle
+  try {
+    const { data: existing, error: existingErr } = await supabase
+      .from("votes")
+      .select("id")
+      .eq("battle_id", battleId)
+      .eq("club_slug", clubSlug)
+      .eq("user_id", userId)
+      .limit(1);
+
+    if (existingErr) {
+      console.error("voteMVP: error checking existing vote", existingErr);
+    } else if (existing && existing.length > 0) {
+      return { success: false, message: "You already voted for this club." };
+    }
+  } catch (err) {
+    console.error("voteMVP: unexpected error checking existing vote", err);
   }
 
   // enforce 60-second throttling for same voter on this battle
@@ -31,7 +50,7 @@ export async function voteMVP(
       .from("votes")
       .select("created_at")
       .eq("battle_id", battleId)
-      .eq("voter_hash", voterHash)
+      .eq("voter_hash", userId)
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -54,7 +73,8 @@ export async function voteMVP(
       {
         battle_id: battleId,
         club_slug: clubSlug,
-        voter_hash: voterHash,
+        user_id: userId,
+        voter_hash: userId,
       },
     ]);
 
