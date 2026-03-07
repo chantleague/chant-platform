@@ -84,7 +84,7 @@ async function resolveBattleBySlug(
     if (!data?.id) {
       return {
         battle: null,
-        errorMessage: `Could not find battle \"${battleSlug}\".`,
+        errorMessage: `Could not find battle "${battleSlug}".`,
       };
     }
 
