@@ -213,6 +213,7 @@ export async function submitFanChant(
     const createdAt = new Date().toISOString();
     let chantRow: Record<string, unknown> | null = null;
     let chantError: { message?: string } | null = null;
+    const insertErrors: string[] = [];
 
     const directInsertAttempts: Array<{ label: string; payload: Record<string, unknown> }> = [
       {
@@ -294,6 +295,7 @@ export async function submitFanChant(
       }
 
       chantError = insertResponse.error;
+      insertErrors.push(`${attempt.label}: ${insertResponse.error?.message || "unknown error"}`);
 
       console.error("submitFanChant: direct chants insert attempt failed", {
         attempt: attempt.label,
@@ -412,6 +414,7 @@ export async function submitFanChant(
           }
 
           chantError = insertResponse.error;
+          insertErrors.push(`${attempt.label}: ${insertResponse.error?.message || "unknown error"}`);
 
           console.error("submitFanChant: pack-assisted chants insert attempt failed", {
             attempt: attempt.label,
@@ -450,7 +453,11 @@ export async function submitFanChant(
 
       const detailedError = (chantError?.message || "").trim();
       if (detailedError) {
-        return { success: false, message: `Could not save your chant: ${detailedError}` };
+        const compactAttemptErrors = insertErrors.slice(0, 5).join(" | ");
+        const detailSuffix = compactAttemptErrors
+          ? `${detailedError} [${compactAttemptErrors}]`
+          : detailedError;
+        return { success: false, message: `Could not save your chant: ${detailSuffix}` };
       }
 
       return { success: false, message: "Could not save your chant." };
