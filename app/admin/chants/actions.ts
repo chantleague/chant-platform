@@ -150,31 +150,133 @@ export async function generateAdminAiChant(
   }
 
   const submittedBy = `admin-ai-${Date.now()}`;
-  const chantInsertWithAudio = await supabase.from("chants").insert([
+  const matchId = String(battle.id);
+  const chantPackId = String(packData.id);
+
+  const primaryInsert = await supabase.from("chants").insert([
     {
-      battle_id: String(battle.id),
-      chant_pack_id: String(packData.id),
+      match_id: matchId,
+      chant_pack_id: chantPackId,
       title: chantTitle,
+      chant_text: chantText,
       lyrics: chantText,
       submitted_by: submittedBy,
+      vote_count: 0,
       audio_url: audioUrl,
     },
   ]);
 
-  let chantError = chantInsertWithAudio.error;
+  let chantError = primaryInsert.error;
 
-  if (chantError && (chantError.message || "").toLowerCase().includes("audio_url")) {
-    const fallbackInsert = await supabase.from("chants").insert([
+  if (chantError && /vote_count/i.test(chantError.message || "")) {
+    const retryWithoutVoteCount = await supabase.from("chants").insert([
       {
-        battle_id: String(battle.id),
-        chant_pack_id: String(packData.id),
+        match_id: matchId,
+        chant_pack_id: chantPackId,
         title: chantTitle,
+        chant_text: chantText,
         lyrics: chantText,
         submitted_by: submittedBy,
+        audio_url: audioUrl,
       },
     ]);
 
-    chantError = fallbackInsert.error;
+    chantError = retryWithoutVoteCount.error;
+  }
+
+  if (chantError && (chantError.message || "").toLowerCase().includes("audio_url")) {
+    const fallbackWithoutAudio = await supabase.from("chants").insert([
+      {
+        match_id: matchId,
+        chant_pack_id: chantPackId,
+        title: chantTitle,
+        chant_text: chantText,
+        lyrics: chantText,
+        submitted_by: submittedBy,
+        vote_count: 0,
+      },
+    ]);
+
+    chantError = fallbackWithoutAudio.error;
+
+    if (chantError && /vote_count/i.test(chantError.message || "")) {
+      const fallbackWithoutAudioOrVoteCount = await supabase.from("chants").insert([
+        {
+          match_id: matchId,
+          chant_pack_id: chantPackId,
+          title: chantTitle,
+          chant_text: chantText,
+          lyrics: chantText,
+          submitted_by: submittedBy,
+        },
+      ]);
+
+      chantError = fallbackWithoutAudioOrVoteCount.error;
+    }
+  }
+
+  if (chantError && /match_id/i.test(chantError.message || "")) {
+    const legacyInsert = await supabase.from("chants").insert([
+      {
+        battle_id: matchId,
+        chant_pack_id: chantPackId,
+        title: chantTitle,
+        chant_text: chantText,
+        lyrics: chantText,
+        submitted_by: submittedBy,
+        vote_count: 0,
+        audio_url: audioUrl,
+      },
+    ]);
+
+    chantError = legacyInsert.error;
+
+    if (chantError && /vote_count/i.test(chantError.message || "")) {
+      const legacyWithoutVoteCount = await supabase.from("chants").insert([
+        {
+          battle_id: matchId,
+          chant_pack_id: chantPackId,
+          title: chantTitle,
+          chant_text: chantText,
+          lyrics: chantText,
+          submitted_by: submittedBy,
+          audio_url: audioUrl,
+        },
+      ]);
+
+      chantError = legacyWithoutVoteCount.error;
+    }
+
+    if (chantError && (chantError.message || "").toLowerCase().includes("audio_url")) {
+      const legacyFallbackWithoutAudio = await supabase.from("chants").insert([
+        {
+          battle_id: matchId,
+          chant_pack_id: chantPackId,
+          title: chantTitle,
+          chant_text: chantText,
+          lyrics: chantText,
+          submitted_by: submittedBy,
+          vote_count: 0,
+        },
+      ]);
+
+      chantError = legacyFallbackWithoutAudio.error;
+
+      if (chantError && /vote_count/i.test(chantError.message || "")) {
+        const legacyFallbackWithoutAudioOrVoteCount = await supabase.from("chants").insert([
+          {
+            battle_id: matchId,
+            chant_pack_id: chantPackId,
+            title: chantTitle,
+            chant_text: chantText,
+            lyrics: chantText,
+            submitted_by: submittedBy,
+          },
+        ]);
+
+        chantError = legacyFallbackWithoutAudioOrVoteCount.error;
+      }
+    }
   }
 
   if (chantError) {

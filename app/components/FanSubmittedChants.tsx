@@ -4,7 +4,6 @@ import VoteButton from "@/app/components/VoteButton";
 import { getChantsForBattleSlug } from "@/app/lib/apiLayer";
 
 interface FanSubmittedChantsProps {
-  battleId?: string;
   battleSlug?: string;
 }
 
@@ -32,6 +31,8 @@ function maskSubmitter(submitter: string) {
 function normalizeChant(chant: FanChant): FanChant {
   return {
     ...chant,
+    match_id: chant.match_id || chant.battle_id || "",
+    battle_id: chant.battle_id ?? chant.match_id,
     club_id: chant.club_id ?? null,
     chant_text: chant.chant_text ?? chant.lyrics,
     audio_url: chant.audio_url ?? null,
@@ -58,15 +59,9 @@ function renderEmptySections(topText: string, newText: string) {
   );
 }
 
-async function resolveBattleId(
-  battleId?: string,
+async function resolveMatchId(
   battleSlug?: string,
 ): Promise<string> {
-  const normalizedBattleId = (battleId || "").trim();
-  if (normalizedBattleId) {
-    return normalizedBattleId;
-  }
-
   const normalizedBattleSlug = (battleSlug || "").trim().toLowerCase();
   if (!normalizedBattleSlug) {
     return "";
@@ -92,12 +87,11 @@ async function resolveBattleId(
 }
 
 export default async function FanSubmittedChants({
-  battleId,
   battleSlug,
 }: FanSubmittedChantsProps) {
-  const resolvedBattleId = await resolveBattleId(battleId, battleSlug);
+  const resolvedMatchId = await resolveMatchId(battleSlug);
 
-  if (!resolvedBattleId) {
+  if (!resolvedMatchId) {
     return renderEmptySections("No chants available yet.", "No chants available yet.");
   }
 
@@ -105,28 +99,28 @@ export default async function FanSubmittedChants({
   let fatalErrorMessage: string | null = null;
   const precomputedVoteCountByPackId: Record<string, number> = {};
 
-  const withAudio = await supabase
+  const byMatchId = await supabase
     .from("chants")
-    .select("id, battle_id, chant_pack_id, club_id, title, chant_text, lyrics, audio_url, submitted_by, created_at")
-    .eq("battle_id", resolvedBattleId)
+    .select("id, match_id, chant_pack_id, club_id, title, chant_text, lyrics, audio_url, submitted_by, created_at, vote_count")
+    .eq("match_id", resolvedMatchId)
     .order("created_at", { ascending: false });
 
-  const withAudioErrorMessage = withAudio.error?.message || "";
+  const withAudioErrorMessage = byMatchId.error?.message || "";
   const hasSchemaDriftError =
-    Boolean(withAudio.error) &&
-    /(column .* does not exist|audio_url|chant_text|club_id|title|submitted_by|created_at)/i.test(
+    Boolean(byMatchId.error) &&
+    /(column .* does not exist|audio_url|chant_text|club_id|title|submitted_by|created_at|match_id|vote_count)/i.test(
       withAudioErrorMessage,
     );
 
   if (hasSchemaDriftError) {
-    const fallback = await supabase
+    const legacyByBattleId = await supabase
       .from("chants")
-      .select("id, battle_id, chant_pack_id, title, lyrics, submitted_by, created_at")
-      .eq("battle_id", resolvedBattleId)
+      .select("id, battle_id, chant_pack_id, title, chant_text, lyrics, submitted_by, created_at")
+      .eq("battle_id", resolvedMatchId)
       .order("created_at", { ascending: false });
 
-    if (fallback.error) {
-      const fallbackErrorMessage = fallback.error.message || "";
+    if (legacyByBattleId.error) {
+      const fallbackErrorMessage = legacyByBattleId.error.message || "";
       const needsMinimalLegacyFallback =
         /(column .* does not exist|title|submitted_by|created_at|id)/i.test(fallbackErrorMessage);
 
@@ -135,7 +129,7 @@ export default async function FanSubmittedChants({
         const minimalLegacy = await supabase
           .from("chants")
           .select("chant_pack_id, lyrics")
-          .eq("battle_id", resolvedBattleId);
+          .eq("battle_id", resolvedMatchId);
 
         if (minimalLegacy.error) {
           fatalErrorMessage = minimalLegacy.error.message || "Unknown fan chant query error";
@@ -151,7 +145,8 @@ export default async function FanSubmittedChants({
 
               return normalizeChant({
                 id: `${chantPackId}-${index}`,
-                battle_id: resolvedBattleId,
+                match_id: resolvedMatchId,
+                battle_id: resolvedMatchId,
                 chant_pack_id: chantPackId,
                 club_id: null,
                 title: "Fan Chant",
@@ -165,24 +160,24 @@ export default async function FanSubmittedChants({
             .filter((chant): chant is FanChant => Boolean(chant)));
         }
       } else {
-        fatalErrorMessage = fallback.error.message || "Unknown fan chant query error";
+        fatalErrorMessage = legacyByBattleId.error.message || "Unknown fan chant query error";
       }
     } else {
-      chants = ((fallback.data as FanChant[] | null) || []).map((chant) =>
+      chants = ((legacyByBattleId.data as FanChant[] | null) || []).map((chant) =>
         normalizeChant(chant),
       );
     }
-  } else if (withAudio.error) {
-    fatalErrorMessage = withAudio.error.message || "Unknown fan chant query error";
+  } else if (byMatchId.error) {
+    fatalErrorMessage = byMatchId.error.message || "Unknown fan chant query error";
   } else {
-    chants = ((withAudio.data as FanChant[] | null) || []).map((chant) =>
+    chants = ((byMatchId.data as FanChant[] | null) || []).map((chant) =>
       normalizeChant(chant),
     );
   }
 
   if (fatalErrorMessage) {
     console.error("Error fetching fan chants directly; trying API fallback", {
-      battle_id: resolvedBattleId,
+      match_id: resolvedMatchId,
       error: fatalErrorMessage,
     });
 
@@ -197,7 +192,8 @@ export default async function FanSubmittedChants({
 
         return normalizeChant({
           id: `${chantPackId || "chant"}-${index}`,
-          battle_id: resolvedBattleId,
+          match_id: resolvedMatchId,
+          battle_id: resolvedMatchId,
           chant_pack_id: chantPackId,
           club_id: null,
           title: "Fan Chant",

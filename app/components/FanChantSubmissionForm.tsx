@@ -6,7 +6,6 @@ import { submitFanChant } from "@/app/battles/[slug]/chant-actions";
 import ChantAudioUpload from "@/components/ChantAudioUpload";
 
 interface FanChantSubmissionFormProps {
-  battleId: string;
   battleSlug: string;
   submissionOpen: boolean;
   startsAt?: string | null;
@@ -34,7 +33,6 @@ function getOrCreateFanId() {
 }
 
 export default function FanChantSubmissionForm({
-  battleId,
   battleSlug,
   submissionOpen,
   startsAt,
@@ -49,14 +47,6 @@ export default function FanChantSubmissionForm({
   );
   const [latestChantId, setLatestChantId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  if (!battleId) {
-    return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
-        Fan chant submissions are available when this battle is connected to Supabase.
-      </div>
-    );
-  }
 
   if (!submissionOpen) {
     return (
@@ -87,7 +77,6 @@ export default function FanChantSubmissionForm({
 
     startTransition(async () => {
       const result = (await submitFanChant({
-        battleId,
         battleSlug,
         userId: activeFanId,
         title: simpleMode ? undefined : title,

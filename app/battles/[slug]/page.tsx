@@ -124,10 +124,23 @@ export default async function Page({
 
 	if (battle.id) {
 		try {
-			const { count, error } = await supabase
+			const byMatchId = await supabase
 				.from("chants")
 				.select("id", { count: "exact", head: true })
-				.eq("battle_id", battle.id);
+				.eq("match_id", battle.id);
+
+			let count = byMatchId.count;
+			let error = byMatchId.error;
+
+			if (error && /column .*match_id.* does not exist/i.test(error.message || "")) {
+				const legacyByBattleId = await supabase
+					.from("chants")
+					.select("id", { count: "exact", head: true })
+					.eq("battle_id", battle.id);
+
+				count = legacyByBattleId.count;
+				error = legacyByBattleId.error;
+			}
 
 			if (error) {
 				console.warn("battle page: failed to fetch chant count", error);
@@ -222,14 +235,13 @@ export default async function Page({
 				</div>
 
 				<FanChantSubmissionForm
-					battleId={battleId}
 					battleSlug={slug}
 					submissionOpen={submissionWindowOpen}
 					startsAt={battle.starts_at || null}
 					simpleMode
 				/>
 
-				<FanSubmittedChants battleId={battleId} battleSlug={slug} />
+				<FanSubmittedChants battleSlug={slug} />
 			</section>
 
 			<OfficialChantPacks matchId={battle.id || slug} />

@@ -61,13 +61,15 @@ export interface ChantWithMatch extends ChantPack {
 
 export interface FanChant {
   id: string;
-  battle_id: string;
+  match_id: string;
+  battle_id?: string;
   chant_pack_id: string;
   club_id?: string | null;
   title: string;
   chant_text?: string | null;
   lyrics: string;
   audio_url?: string | null;
+  vote_count?: number | null;
   submitted_by: string;
   created_at: string;
 }

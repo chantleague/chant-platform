@@ -250,18 +250,29 @@ export async function getChantsForBattleSlug(
 
     const battleId = String(battleData.id);
 
-    const [{ data: packsData, error: packsError }, { data: fanChantsData, error: fanChantsError }] =
-      await Promise.all([
-        supabase
-          .from("chant_packs")
-          .select("id, title, description, audio_url, created_at")
-          .eq("match_id", battleId)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("chants")
-          .select("chant_pack_id, lyrics")
-          .eq("battle_id", battleId),
-      ]);
+    const fanChantsByMatch = await supabase
+      .from("chants")
+      .select("chant_pack_id, lyrics")
+      .eq("match_id", battleId);
+
+    let fanChantsData = fanChantsByMatch.data;
+    let fanChantsError = fanChantsByMatch.error;
+
+    if (fanChantsError && /column .*match_id.* does not exist/i.test(fanChantsError.message || "")) {
+      const legacyByBattleId = await supabase
+        .from("chants")
+        .select("chant_pack_id, lyrics")
+        .eq("battle_id", battleId);
+
+      fanChantsData = legacyByBattleId.data;
+      fanChantsError = legacyByBattleId.error;
+    }
+
+    const { data: packsData, error: packsError } = await supabase
+      .from("chant_packs")
+      .select("id, title, description, audio_url, created_at")
+      .eq("match_id", battleId)
+      .order("created_at", { ascending: false });
 
     if (packsError || !packsData) {
       if (packsError) {
