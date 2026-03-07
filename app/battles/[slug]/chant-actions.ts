@@ -520,7 +520,7 @@ export async function submitFanChant(
 
       const detailedError = (chantError?.message || "").trim();
       if (detailedError) {
-        const compactAttemptErrors = insertErrors.slice(0, 10).join(" | ");
+        const compactAttemptErrors = insertErrors.slice(0, 30).join(" | ");
         const detailSuffix = compactAttemptErrors
           ? `${detailedError} [${compactAttemptErrors}]`
           : detailedError;
