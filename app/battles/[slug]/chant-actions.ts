@@ -450,6 +450,21 @@ export async function submitFanChant(
               created_at: createdAt,
             },
           },
+          {
+            label: "pack-assisted-legacy-id-only",
+            payload: {
+              battle_id: resolvedMatchId,
+              chant_pack_id: createdPackId,
+              created_at: createdAt,
+            },
+          },
+          {
+            label: "pack-assisted-legacy-id-only-with-default-created-at",
+            payload: {
+              battle_id: resolvedMatchId,
+              chant_pack_id: createdPackId,
+            },
+          },
         ];
 
         for (const attempt of packInsertAttempts) {
