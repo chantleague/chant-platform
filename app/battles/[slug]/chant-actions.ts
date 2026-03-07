@@ -279,6 +279,24 @@ export async function submitFanChant(
           created_at: createdAt,
         },
       },
+      {
+        label: "direct-match-title-only",
+        payload: {
+          match_id: resolvedMatchId,
+          title: chantText,
+          submitted_by: userId,
+          created_at: createdAt,
+        },
+      },
+      {
+        label: "direct-legacy-title-only",
+        payload: {
+          battle_id: resolvedMatchId,
+          title: chantText,
+          submitted_by: userId,
+          created_at: createdAt,
+        },
+      },
     ];
 
     for (const attempt of directInsertAttempts) {
