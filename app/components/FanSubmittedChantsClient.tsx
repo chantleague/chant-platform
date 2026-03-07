@@ -30,6 +30,17 @@ function maskSubmitter(submitter: string) {
   return `${submitter.slice(0, 10)}...`;
 }
 
+function toValidUuid(value: string) {
+  const candidate = value.trim();
+  if (!candidate) {
+    return "";
+  }
+
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidPattern.test(candidate) ? candidate : "";
+}
+
 export default function FanSubmittedChantsClient({
   initialChants,
   battleSlug,
@@ -82,6 +93,7 @@ export default function FanSubmittedChantsClient({
   const renderChantCard = (chant: FanChantWithVotes) => {
     const chantText = (chant.chant_text || chant.lyrics || "").trim();
     const chantPackId = String(chant.chant_pack_id || "").trim();
+    const chantRowId = toValidUuid(String(chant.id || ""));
 
     return (
       <article
@@ -110,7 +122,7 @@ export default function FanSubmittedChantsClient({
           <div className="flex shrink-0 items-center">
             <VoteButton
               chantPackId={chantPackId || undefined}
-              chantRowId={chant.id || undefined}
+              chantRowId={chantRowId || undefined}
               matchId={chant.match_id || undefined}
               battleSlug={battleSlug}
               voteCount={chant.voteCount}

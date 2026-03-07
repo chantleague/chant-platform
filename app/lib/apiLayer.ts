@@ -498,33 +498,47 @@ export async function submitChantVote(input: SubmitChantVoteInput): Promise<Subm
       }
 
       if (!chantRowResult.data?.id) {
-        return {
-          success: false,
-          status: 404,
-          message: "Chant not found.",
-        };
+        if (resolvedChantPackId) {
+          console.warn("api/votes: chant row id not found, falling back to chant_pack_id", {
+            chantRowId: resolvedChantRowId,
+            chantPackId: resolvedChantPackId,
+          });
+          resolvedChantRowId = null;
+        } else {
+          return {
+            success: false,
+            status: 404,
+            message: "Chant not found.",
+          };
+        }
       }
 
-      const ownerId = chantRowResult.data.submitted_by
-        ? String(chantRowResult.data.submitted_by)
-        : null;
-      if (ownerId && ownerId === normalizedUser) {
-        return {
-          success: false,
-          status: 403,
-          message: "Users cannot vote on their own chants.",
-        };
+      if (chantRowResult.data?.id) {
+        const ownerId = chantRowResult.data.submitted_by
+          ? String(chantRowResult.data.submitted_by)
+          : null;
+        if (ownerId && ownerId === normalizedUser) {
+          return {
+            success: false,
+            status: 403,
+            message: "Users cannot vote on their own chants.",
+          };
+        }
       }
 
-      resolvedChantPackId = chantRowResult.data.chant_pack_id
-        ? String(chantRowResult.data.chant_pack_id)
-        : resolvedChantPackId;
+      if (chantRowResult.data?.id) {
+        resolvedChantPackId = chantRowResult.data.chant_pack_id
+          ? String(chantRowResult.data.chant_pack_id)
+          : resolvedChantPackId;
+      }
 
-      resolvedMatchId = chantRowResult.data.match_id
-        ? String(chantRowResult.data.match_id)
-        : chantRowResult.data.battle_id
-          ? String(chantRowResult.data.battle_id)
-          : resolvedMatchId;
+      if (chantRowResult.data?.id) {
+        resolvedMatchId = chantRowResult.data.match_id
+          ? String(chantRowResult.data.match_id)
+          : chantRowResult.data.battle_id
+            ? String(chantRowResult.data.battle_id)
+            : resolvedMatchId;
+      }
     }
 
     if (!resolvedChantRowId && resolvedChantPackId) {
