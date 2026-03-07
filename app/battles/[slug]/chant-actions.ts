@@ -297,6 +297,22 @@ export async function submitFanChant(
           created_at: createdAt,
         },
       },
+      {
+        label: "direct-match-bare",
+        payload: {
+          match_id: resolvedMatchId,
+          title: chantText,
+          created_at: createdAt,
+        },
+      },
+      {
+        label: "direct-legacy-bare",
+        payload: {
+          battle_id: resolvedMatchId,
+          title: chantText,
+          created_at: createdAt,
+        },
+      },
     ];
 
     for (const attempt of directInsertAttempts) {
@@ -392,6 +408,15 @@ export async function submitFanChant(
             },
           },
           {
+            label: "pack-assisted-match-id-bare",
+            payload: {
+              match_id: resolvedMatchId,
+              chant_pack_id: createdPackId,
+              title: chantText,
+              created_at: createdAt,
+            },
+          },
+          {
             label: "pack-assisted-legacy-battle-id",
             payload: {
               battle_id: resolvedMatchId,
@@ -413,6 +438,15 @@ export async function submitFanChant(
               title,
               lyrics: chantText,
               submitted_by: userId,
+              created_at: createdAt,
+            },
+          },
+          {
+            label: "pack-assisted-legacy-battle-id-bare",
+            payload: {
+              battle_id: resolvedMatchId,
+              chant_pack_id: createdPackId,
+              title: chantText,
               created_at: createdAt,
             },
           },
@@ -471,7 +505,7 @@ export async function submitFanChant(
 
       const detailedError = (chantError?.message || "").trim();
       if (detailedError) {
-        const compactAttemptErrors = insertErrors.slice(0, 5).join(" | ");
+        const compactAttemptErrors = insertErrors.slice(0, 10).join(" | ");
         const detailSuffix = compactAttemptErrors
           ? `${detailedError} [${compactAttemptErrors}]`
           : detailedError;
