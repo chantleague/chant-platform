@@ -109,10 +109,14 @@ export default async function FanSubmittedChants({
     .eq("battle_id", resolvedBattleId)
     .order("created_at", { ascending: false });
 
-  if (
-    withAudio.error &&
-    /(audio_url|chant_text|club_id)/i.test(withAudio.error.message || "")
-  ) {
+  const withAudioErrorMessage = withAudio.error?.message || "";
+  const hasSchemaDriftError =
+    Boolean(withAudio.error) &&
+    /(column .* does not exist|audio_url|chant_text|club_id|title|submitted_by|created_at)/i.test(
+      withAudioErrorMessage,
+    );
+
+  if (hasSchemaDriftError) {
     const fallback = await supabase
       .from("chants")
       .select("id, battle_id, chant_pack_id, title, lyrics, submitted_by, created_at")
@@ -120,7 +124,47 @@ export default async function FanSubmittedChants({
       .order("created_at", { ascending: false });
 
     if (fallback.error) {
-      fatalErrorMessage = fallback.error.message || "Unknown fan chant query error";
+      const fallbackErrorMessage = fallback.error.message || "";
+      const needsMinimalLegacyFallback =
+        /(column .* does not exist|title|submitted_by|created_at|id)/i.test(fallbackErrorMessage);
+
+      if (needsMinimalLegacyFallback) {
+        // Legacy fallback: only require chant_pack_id + lyrics and fill missing UI fields.
+        const minimalLegacy = await supabase
+          .from("chants")
+          .select("chant_pack_id, lyrics")
+          .eq("battle_id", resolvedBattleId);
+
+        if (minimalLegacy.error) {
+          fatalErrorMessage = minimalLegacy.error.message || "Unknown fan chant query error";
+        } else {
+          chants = (((minimalLegacy.data as Array<{ chant_pack_id?: string; lyrics?: string }> | null) || [])
+            .map((row, index) => {
+              const chantPackId = String(row.chant_pack_id || "").trim();
+              if (!chantPackId) {
+                return null;
+              }
+
+              const lyrics = String(row.lyrics || "").trim();
+
+              return normalizeChant({
+                id: `${chantPackId}-${index}`,
+                battle_id: resolvedBattleId,
+                chant_pack_id: chantPackId,
+                club_id: null,
+                title: "Fan Chant",
+                chant_text: lyrics,
+                lyrics,
+                audio_url: null,
+                submitted_by: "fan",
+                created_at: "",
+              } as FanChant);
+            })
+            .filter((chant): chant is FanChant => Boolean(chant)));
+        }
+      } else {
+        fatalErrorMessage = fallback.error.message || "Unknown fan chant query error";
+      }
     } else {
       chants = ((fallback.data as FanChant[] | null) || []).map((chant) =>
         normalizeChant(chant),
