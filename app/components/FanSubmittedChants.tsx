@@ -1,6 +1,7 @@
 import { supabase } from "@/app/lib/supabase";
 import type { FanChant } from "@/app/lib/types";
 import VoteButton from "@/app/components/VoteButton";
+import { getChantsForBattleSlug } from "@/app/lib/apiLayer";
 
 interface FanSubmittedChantsProps {
   battleId?: string;
@@ -102,6 +103,7 @@ export default async function FanSubmittedChants({
 
   let chants: FanChant[] = [];
   let fatalErrorMessage: string | null = null;
+  const precomputedVoteCountByPackId: Record<string, number> = {};
 
   const withAudio = await supabase
     .from("chants")
@@ -179,11 +181,41 @@ export default async function FanSubmittedChants({
   }
 
   if (fatalErrorMessage) {
-    console.error("Error fetching fan chants", {
+    console.error("Error fetching fan chants directly; trying API fallback", {
       battle_id: resolvedBattleId,
       error: fatalErrorMessage,
     });
 
+    try {
+      const apiFallback = await getChantsForBattleSlug(battleSlug || undefined);
+
+      chants = (apiFallback.chants || []).map((chant, index) => {
+        const chantPackId = String(chant.chant_id || "").trim();
+        const chantText = String(chant.chant_text || "").trim();
+
+        precomputedVoteCountByPackId[chantPackId] = Number(chant.votes || 0);
+
+        return normalizeChant({
+          id: `${chantPackId || "chant"}-${index}`,
+          battle_id: resolvedBattleId,
+          chant_pack_id: chantPackId,
+          club_id: null,
+          title: "Fan Chant",
+          chant_text: chantText,
+          lyrics: chantText,
+          audio_url: chant.audio_url || null,
+          submitted_by: "fan",
+          created_at: chant.created_at || "",
+        } as FanChant);
+      });
+
+      fatalErrorMessage = null;
+    } catch (apiFallbackError) {
+      console.error("Error fetching fan chants from API fallback", apiFallbackError);
+    }
+  }
+
+  if (fatalErrorMessage) {
     return (
       <div className="space-y-6">
         <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4 text-sm text-red-300">
@@ -217,9 +249,15 @@ export default async function FanSubmittedChants({
   const chantPackIds = chants
     .map((chant) => String(chant.chant_pack_id || ""))
     .filter((chantPackId) => Boolean(chantPackId));
-  const voteCountByPackId: Record<string, number> = {};
+  const voteCountByPackId: Record<string, number> = {
+    ...precomputedVoteCountByPackId,
+  };
 
-  if (chantPackIds.length > 0) {
+  const needsVoteQuery = chantPackIds.some(
+    (chantPackId) => typeof voteCountByPackId[chantPackId] !== "number",
+  );
+
+  if (chantPackIds.length > 0 && needsVoteQuery) {
     const { data: voteRows, error: voteError } = await supabase
       .from("chant_votes")
       .select("chant_pack_id")
