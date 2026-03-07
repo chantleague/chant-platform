@@ -102,18 +102,31 @@ export async function submitFanChant(
       };
     }
 
-    const { count: existingCount, error: countError } = await supabase
+    let existingCount: number | null = null;
+
+    const { count, error: countError } = await supabase
       .from("chants")
       .select("id", { count: "exact", head: true })
       .eq("battle_id", battleId)
       .eq("submitted_by", userId);
 
     if (countError) {
-      console.error("submitFanChant: failed counting user chants", countError);
-      return { success: false, message: "Could not validate submission limits." };
+      // MVP fallback: do not block submission if count validation is unavailable.
+      console.warn("submitFanChant: submission limit check unavailable, allowing insert", {
+        battleId,
+        userId,
+        error: countError.message,
+      });
+    } else if (typeof count === "number") {
+      existingCount = count;
+    } else {
+      console.warn("submitFanChant: submission limit count returned null, allowing insert", {
+        battleId,
+        userId,
+      });
     }
 
-    if ((existingCount || 0) >= MAX_CHANTS_PER_USER) {
+    if (existingCount !== null && existingCount >= MAX_CHANTS_PER_USER) {
       return {
         success: false,
         message: `You can submit up to ${MAX_CHANTS_PER_USER} chants per battle.`,

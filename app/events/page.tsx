@@ -88,7 +88,7 @@ export default async function EventsPage() {
           {events.map((event) => (
             <Link
               key={event.slug}
-              href={`/battle/${event.slug}`}
+              href={`/battles/${event.slug}`}
               className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4 transition hover:border-zinc-600 hover:bg-zinc-900/70"
             >
               <div className="flex items-center justify-between gap-2">

@@ -49,8 +49,8 @@ export default function Navbar({ brand }: NavbarProps) {
           <Link
             href={
               mockBattles.length > 0
-                ? `/battle/${mockBattles[0].slug}`
-                : "/battle"
+                ? `/battles/${mockBattles[0].slug}`
+                : "/battles"
             }
             className="hover:text-white"
           >

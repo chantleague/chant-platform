@@ -3,7 +3,8 @@ import type { FanChant } from "@/app/lib/types";
 import VoteButton from "@/app/components/VoteButton";
 
 interface FanSubmittedChantsProps {
-  battleId: string;
+  battleId?: string;
+  battleSlug?: string;
 }
 
 interface FanChantWithVotes extends FanChant {
@@ -27,36 +28,85 @@ function maskSubmitter(submitter: string) {
   return `${submitter.slice(0, 10)}...`;
 }
 
-export default async function FanSubmittedChants({
-  battleId,
-}: FanSubmittedChantsProps) {
-  if (!battleId) {
-    return (
-      <div className="space-y-6">
-        <section className="space-y-3">
-          <h3 className="text-base font-semibold text-zinc-50">Top Chants</h3>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
-            No chants available yet.
-          </div>
-        </section>
+function normalizeChant(chant: FanChant): FanChant {
+  return {
+    ...chant,
+    club_id: chant.club_id ?? null,
+    chant_text: chant.chant_text ?? chant.lyrics,
+    audio_url: chant.audio_url ?? null,
+  };
+}
 
-        <section className="space-y-3">
-          <h3 className="text-base font-semibold text-zinc-50">New Chants</h3>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
-            No chants available yet.
-          </div>
-        </section>
-      </div>
-    );
+function renderEmptySections(topText: string, newText: string) {
+  return (
+    <div className="space-y-6">
+      <section className="space-y-3">
+        <h3 className="text-base font-semibold text-zinc-50">Top Chants</h3>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
+          {topText}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-base font-semibold text-zinc-50">New Chants</h3>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
+          {newText}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+async function resolveBattleId(
+  battleId?: string,
+  battleSlug?: string,
+): Promise<string> {
+  const normalizedBattleId = (battleId || "").trim();
+  if (normalizedBattleId) {
+    return normalizedBattleId;
   }
 
-  let data: FanChant[] | null = null;
-  let error: { message?: string } | null = null;
+  const normalizedBattleSlug = (battleSlug || "").trim().toLowerCase();
+  if (!normalizedBattleSlug) {
+    return "";
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("matches")
+      .select("id")
+      .eq("slug", normalizedBattleSlug)
+      .maybeSingle();
+
+    if (error) {
+      console.error("fan chants: failed to resolve battle slug", error);
+      return "";
+    }
+
+    return data?.id ? String(data.id) : "";
+  } catch (error) {
+    console.error("fan chants: unexpected error resolving battle slug", error);
+    return "";
+  }
+}
+
+export default async function FanSubmittedChants({
+  battleId,
+  battleSlug,
+}: FanSubmittedChantsProps) {
+  const resolvedBattleId = await resolveBattleId(battleId, battleSlug);
+
+  if (!resolvedBattleId) {
+    return renderEmptySections("No chants available yet.", "No chants available yet.");
+  }
+
+  let chants: FanChant[] = [];
+  let fatalErrorMessage: string | null = null;
 
   const withAudio = await supabase
     .from("chants")
     .select("id, battle_id, chant_pack_id, club_id, title, chant_text, lyrics, audio_url, submitted_by, created_at")
-    .eq("battle_id", battleId)
+    .eq("battle_id", resolvedBattleId)
     .order("created_at", { ascending: false });
 
   if (
@@ -66,24 +116,30 @@ export default async function FanSubmittedChants({
     const fallback = await supabase
       .from("chants")
       .select("id, battle_id, chant_pack_id, title, lyrics, submitted_by, created_at")
-      .eq("battle_id", battleId)
+      .eq("battle_id", resolvedBattleId)
       .order("created_at", { ascending: false });
 
-    data =
-      ((fallback.data as FanChant[] | null) || []).map((chant) => ({
-        ...chant,
-        club_id: null,
-        chant_text: chant.lyrics,
-        audio_url: null,
-      })) || null;
-    error = fallback.error ? { message: fallback.error.message } : null;
+    if (fallback.error) {
+      fatalErrorMessage = fallback.error.message || "Unknown fan chant query error";
+    } else {
+      chants = ((fallback.data as FanChant[] | null) || []).map((chant) =>
+        normalizeChant(chant),
+      );
+    }
+  } else if (withAudio.error) {
+    fatalErrorMessage = withAudio.error.message || "Unknown fan chant query error";
   } else {
-    data = withAudio.data as FanChant[] | null;
-    error = withAudio.error ? { message: withAudio.error.message } : null;
+    chants = ((withAudio.data as FanChant[] | null) || []).map((chant) =>
+      normalizeChant(chant),
+    );
   }
 
-  if (error) {
-    console.error("Error fetching fan chants", error);
+  if (fatalErrorMessage) {
+    console.error("Error fetching fan chants", {
+      battle_id: resolvedBattleId,
+      error: fatalErrorMessage,
+    });
+
     return (
       <div className="space-y-6">
         <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4 text-sm text-red-300">
@@ -107,40 +163,42 @@ export default async function FanSubmittedChants({
     );
   }
 
-  const chants = (data as FanChant[] | null) || [];
   if (chants.length === 0) {
-    return (
-      <div className="space-y-6">
-        <section className="space-y-3">
-          <h3 className="text-base font-semibold text-zinc-50">Top Chants</h3>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
-            No fan chants submitted yet. Be the first to drop one.
-          </div>
-        </section>
-
-        <section className="space-y-3">
-          <h3 className="text-base font-semibold text-zinc-50">New Chants</h3>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
-            New fan chants will appear here.
-          </div>
-        </section>
-      </div>
+    return renderEmptySections(
+      "No fan chants submitted yet. Be the first to drop one.",
+      "New fan chants will appear here.",
     );
   }
 
-  const chantsWithVotes: FanChantWithVotes[] = [];
+  const chantPackIds = chants
+    .map((chant) => String(chant.chant_pack_id || ""))
+    .filter((chantPackId) => Boolean(chantPackId));
+  const voteCountByPackId: Record<string, number> = {};
 
-  for (const chant of chants) {
-    const { count } = await supabase
+  if (chantPackIds.length > 0) {
+    const { data: voteRows, error: voteError } = await supabase
       .from("chant_votes")
-      .select("*", { count: "exact" })
-      .eq("chant_pack_id", chant.chant_pack_id);
+      .select("chant_pack_id")
+      .in("chant_pack_id", chantPackIds);
 
-    chantsWithVotes.push({
-      ...chant,
-      voteCount: count || 0,
-    });
+    if (voteError) {
+      console.error("Error fetching chant vote counts", voteError);
+    } else {
+      ((voteRows as Array<{ chant_pack_id: string }> | null) || []).forEach((vote) => {
+        const chantPackId = String(vote.chant_pack_id || "");
+        if (!chantPackId) {
+          return;
+        }
+
+        voteCountByPackId[chantPackId] = (voteCountByPackId[chantPackId] || 0) + 1;
+      });
+    }
   }
+
+  const chantsWithVotes: FanChantWithVotes[] = chants.map((chant) => ({
+    ...chant,
+    voteCount: voteCountByPackId[String(chant.chant_pack_id || "")] || 0,
+  }));
 
   const topChants = [...chantsWithVotes]
     .sort((a, b) => {
@@ -152,16 +210,9 @@ export default async function FanSubmittedChants({
     })
     .slice(0, 5);
 
-  const topIds = new Set(topChants.map((chant) => chant.id));
-  const newestChants = [...chantsWithVotes]
-    .filter((chant) => !topIds.has(chant.id))
-    .sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at));
-
-  const fallbackNewest = newestChants.length > 0
-    ? newestChants
-    : [...chantsWithVotes].sort(
-        (a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at),
-      );
+  const newestChants = [...chantsWithVotes].sort(
+    (a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at),
+  );
 
   function renderChantCard(chant: FanChantWithVotes) {
     const chantText = (chant.chant_text || chant.lyrics || "").trim();
@@ -186,7 +237,7 @@ export default async function FanSubmittedChants({
               </div>
             )}
             <p className="text-xs text-zinc-500">
-              Submitted by {maskSubmitter(chant.submitted_by)}
+              Submitted by {maskSubmitter(String(chant.submitted_by || "anonymous"))}
             </p>
           </div>
 
@@ -207,7 +258,7 @@ export default async function FanSubmittedChants({
 
       <section className="space-y-3">
         <h3 className="text-base font-semibold text-zinc-50">New Chants</h3>
-        {fallbackNewest.map((chant) => renderChantCard(chant))}
+        {newestChants.map((chant) => renderChantCard(chant))}
       </section>
     </div>
   );

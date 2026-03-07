@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { submitFanChant } from "@/app/battles/[slug]/chant-actions";
 import ChantAudioUpload from "@/components/ChantAudioUpload";
 
@@ -39,6 +40,7 @@ export default function FanChantSubmissionForm({
   startsAt,
   simpleMode = false,
 }: FanChantSubmissionFormProps) {
+  const router = useRouter();
   const [title, setTitle] = useState("");
   const [lyrics, setLyrics] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -102,6 +104,7 @@ export default function FanChantSubmissionForm({
         setTitle("");
         setLyrics("");
         setLatestChantId(result.chantId || null);
+        router.refresh();
       }
     });
   };

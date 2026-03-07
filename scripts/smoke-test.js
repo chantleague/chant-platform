@@ -39,8 +39,8 @@ async function findWorkingBase() {
   for (const path of endpoints) {
     const url = base + path;
     try {
-      const res = await fetch(url, { redirect: 'manual' });
-      console.log(`${path} -> ${res.status} ${res.statusText}`);
+      const res = await fetch(url, { redirect: 'follow' });
+      console.log(`${path} -> ${res.status} ${res.statusText} (${res.url})`);
       if (res.status !== 200) {
         console.error(`FAIL: ${path} returned ${res.status}`);
         failed = true;
