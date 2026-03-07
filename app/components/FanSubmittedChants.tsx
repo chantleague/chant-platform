@@ -268,6 +268,35 @@ export default async function FanSubmittedChants({
     );
   }
 
+  if (chants.length === 0 && battleSlug) {
+    try {
+      const apiFallback = await getChantsForBattleSlug(battleSlug || undefined);
+
+      chants = (apiFallback.chants || []).map((chant, index) => {
+        const chantPackId = String(chant.chant_id || "").trim();
+        const chantText = String(chant.chant_text || "").trim();
+
+        precomputedVoteCountByPackId[chantPackId] = Number(chant.votes || 0);
+
+        return normalizeChant({
+          id: `${chantPackId || "chant"}-${index}`,
+          match_id: resolvedMatchId,
+          battle_id: resolvedMatchId,
+          chant_pack_id: chantPackId,
+          club_id: null,
+          title: "Fan Chant",
+          chant_text: chantText,
+          lyrics: chantText,
+          audio_url: chant.audio_url || null,
+          submitted_by: "fan",
+          created_at: chant.created_at || "",
+        } as FanChant);
+      });
+    } catch (apiFallbackError) {
+      console.error("Error fetching fan chants from empty-state API fallback", apiFallbackError);
+    }
+  }
+
   if (chants.length === 0) {
     return renderEmptySections(
       "No fan chants submitted yet. Be the first to drop one.",

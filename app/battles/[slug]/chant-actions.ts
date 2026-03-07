@@ -39,6 +39,12 @@ interface LinkFanChantAudioResult {
   message: string;
 }
 
+interface AdaptiveChantsInsertResult {
+  row: Record<string, unknown> | null;
+  errorMessage: string;
+  attemptMessages: string[];
+}
+
 function isSubmissionWindowOpen(status?: string | null, startsAt?: string | null) {
   const normalizedStatus = (status || "").toLowerCase();
   if (normalizedStatus && normalizedStatus !== "upcoming") {
@@ -55,6 +61,76 @@ function isSubmissionWindowOpen(status?: string | null, startsAt?: string | null
   }
 
   return Date.now() < kickoff;
+}
+
+function extractMissingChantsColumn(errorMessage: string): string | null {
+  const match = errorMessage.match(/Could not find the '([^']+)' column of 'chants' in the schema cache/i);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  return match[1];
+}
+
+async function adaptiveInsertChant(
+  seedPayload: Record<string, unknown>,
+): Promise<AdaptiveChantsInsertResult> {
+  const disabledColumns = new Set<string>();
+  const attemptMessages: string[] = [];
+  let lastErrorMessage = "";
+
+  for (let attempt = 1; attempt <= 30; attempt += 1) {
+    const payloadEntries = Object.entries(seedPayload).filter(([column, value]) => {
+      if (disabledColumns.has(column)) {
+        return false;
+      }
+
+      return typeof value !== "undefined";
+    });
+
+    if (payloadEntries.length === 0) {
+      break;
+    }
+
+    const payload = Object.fromEntries(payloadEntries);
+
+    const insertResponse = await supabase
+      .from("chants")
+      .insert([payload])
+      .select("*")
+      .single();
+
+    if (!insertResponse.error && insertResponse.data) {
+      return {
+        row: insertResponse.data as Record<string, unknown>,
+        errorMessage: "",
+        attemptMessages,
+      };
+    }
+
+    const message = insertResponse.error?.message || "unknown error";
+    lastErrorMessage = message;
+    attemptMessages.push(`attempt-${attempt}: ${message}`);
+
+    const missingColumn = extractMissingChantsColumn(message);
+    if (missingColumn) {
+      disabledColumns.add(missingColumn);
+      continue;
+    }
+
+    if (/foreign key/i.test(message) && /chant_pack_id/i.test(message)) {
+      disabledColumns.add("chant_pack_id");
+      continue;
+    }
+
+    break;
+  }
+
+  return {
+    row: null,
+    errorMessage: lastErrorMessage,
+    attemptMessages,
+  };
 }
 
 async function resolveMatchBySlug(
@@ -211,291 +287,66 @@ export async function submitFanChant(
     }
 
     const createdAt = new Date().toISOString();
-    let chantRow: Record<string, unknown> | null = null;
-    let chantError: { message?: string } | null = null;
-    const insertErrors: string[] = [];
-
-    const directInsertAttempts: Array<{ label: string; payload: Record<string, unknown> }> = [
-      {
-        label: "direct-schema-aligned",
-        payload: {
-          match_id: resolvedMatchId,
-          chant_text: chantText,
-          vote_count: 0,
-          created_at: createdAt,
-          title,
-          submitted_by: userId,
-          club_id: clubId,
-          audio_url: null,
-        },
-      },
-      {
-        label: "direct-required-fields",
-        payload: {
-          match_id: resolvedMatchId,
-          chant_text: chantText,
-          vote_count: 0,
-          created_at: createdAt,
-        },
-      },
-      {
-        label: "direct-required-without-vote-count",
-        payload: {
-          match_id: resolvedMatchId,
-          chant_text: chantText,
-          created_at: createdAt,
-        },
-      },
-      {
-        label: "direct-legacy-battle-id",
-        payload: {
-          battle_id: resolvedMatchId,
-          chant_text: chantText,
-          vote_count: 0,
-          created_at: createdAt,
-          title,
-          submitted_by: userId,
-          club_id: clubId,
-          audio_url: null,
-        },
-      },
-      {
-        label: "direct-legacy-battle-id-without-vote-count",
-        payload: {
-          battle_id: resolvedMatchId,
-          chant_text: chantText,
-          created_at: createdAt,
-          title,
-          submitted_by: userId,
-        },
-      },
-      {
-        label: "direct-legacy-minimal",
-        payload: {
-          battle_id: resolvedMatchId,
-          title,
-          lyrics: chantText,
-          submitted_by: userId,
-          created_at: createdAt,
-        },
-      },
-      {
-        label: "direct-match-title-only",
-        payload: {
-          match_id: resolvedMatchId,
-          title: chantText,
-          submitted_by: userId,
-          created_at: createdAt,
-        },
-      },
-      {
-        label: "direct-legacy-title-only",
-        payload: {
-          battle_id: resolvedMatchId,
-          title: chantText,
-          submitted_by: userId,
-          created_at: createdAt,
-        },
-      },
-      {
-        label: "direct-match-bare",
-        payload: {
-          match_id: resolvedMatchId,
-          title: chantText,
-          created_at: createdAt,
-        },
-      },
-      {
-        label: "direct-legacy-bare",
-        payload: {
-          battle_id: resolvedMatchId,
-          title: chantText,
-          created_at: createdAt,
-        },
-      },
-    ];
-
-    for (const attempt of directInsertAttempts) {
-      const insertResponse = await supabase
-        .from("chants")
-        .insert([attempt.payload])
-        .select("*")
-        .single();
-
-      if (!insertResponse.error && insertResponse.data) {
-        chantRow = insertResponse.data as Record<string, unknown>;
-        chantError = null;
-        break;
-      }
-
-      chantError = insertResponse.error;
-      insertErrors.push(`${attempt.label}: ${insertResponse.error?.message || "unknown error"}`);
-
-      console.error("submitFanChant: direct chants insert attempt failed", {
-        attempt: attempt.label,
-        battleSlug,
-        matchId: resolvedMatchId,
-        payloadKeys: Object.keys(attempt.payload),
-        error: insertResponse.error,
-      });
-    }
-
     let createdPackId: string | null = null;
 
-    if (!chantRow) {
-      const { data: pack, error: packError } = await supabase
-        .from("chant_packs")
-        .insert([
-          {
-            match_id: resolvedMatchId,
-            title,
-            description: chantText,
-            official: false,
-          },
-        ])
-        .select("id")
-        .single();
+    const { data: pack, error: packError } = await supabase
+      .from("chant_packs")
+      .insert([
+        {
+          match_id: resolvedMatchId,
+          title,
+          description: chantText,
+          official: false,
+        },
+      ])
+      .select("id")
+      .single();
 
-      if (packError || !pack?.id) {
-        console.error("submitFanChant: failed creating chant pack fallback", {
-          battleSlug,
-          matchId: resolvedMatchId,
-          error: packError,
-        });
-      } else {
-        createdPackId = String(pack.id);
-
-        const packInsertAttempts: Array<{ label: string; payload: Record<string, unknown> }> = [
-          {
-            label: "pack-assisted-schema-aligned",
-            payload: {
-              match_id: resolvedMatchId,
-              chant_pack_id: createdPackId,
-              title,
-              chant_text: chantText,
-              submitted_by: userId,
-              vote_count: 0,
-              created_at: createdAt,
-              club_id: clubId,
-              audio_url: null,
-            },
-          },
-          {
-            label: "pack-assisted-without-vote-count",
-            payload: {
-              match_id: resolvedMatchId,
-              chant_pack_id: createdPackId,
-              title,
-              chant_text: chantText,
-              submitted_by: userId,
-              created_at: createdAt,
-              club_id: clubId,
-              audio_url: null,
-            },
-          },
-          {
-            label: "pack-assisted-match-id-minimal",
-            payload: {
-              match_id: resolvedMatchId,
-              chant_pack_id: createdPackId,
-              title,
-              submitted_by: userId,
-              created_at: createdAt,
-            },
-          },
-          {
-            label: "pack-assisted-match-id-bare",
-            payload: {
-              match_id: resolvedMatchId,
-              chant_pack_id: createdPackId,
-              title: chantText,
-              created_at: createdAt,
-            },
-          },
-          {
-            label: "pack-assisted-legacy-battle-id",
-            payload: {
-              battle_id: resolvedMatchId,
-              chant_pack_id: createdPackId,
-              title,
-              chant_text: chantText,
-              submitted_by: userId,
-              vote_count: 0,
-              created_at: createdAt,
-              club_id: clubId,
-              audio_url: null,
-            },
-          },
-          {
-            label: "pack-assisted-legacy-battle-id-minimal",
-            payload: {
-              battle_id: resolvedMatchId,
-              chant_pack_id: createdPackId,
-              title,
-              lyrics: chantText,
-              submitted_by: userId,
-              created_at: createdAt,
-            },
-          },
-          {
-            label: "pack-assisted-legacy-battle-id-bare",
-            payload: {
-              battle_id: resolvedMatchId,
-              chant_pack_id: createdPackId,
-              title: chantText,
-              created_at: createdAt,
-            },
-          },
-          {
-            label: "pack-assisted-legacy-id-only",
-            payload: {
-              battle_id: resolvedMatchId,
-              chant_pack_id: createdPackId,
-              created_at: createdAt,
-            },
-          },
-          {
-            label: "pack-assisted-legacy-id-only-with-default-created-at",
-            payload: {
-              battle_id: resolvedMatchId,
-              chant_pack_id: createdPackId,
-            },
-          },
-        ];
-
-        for (const attempt of packInsertAttempts) {
-          const insertResponse = await supabase
-            .from("chants")
-            .insert([attempt.payload])
-            .select("*")
-            .single();
-
-          if (!insertResponse.error && insertResponse.data) {
-            chantRow = insertResponse.data as Record<string, unknown>;
-            chantError = null;
-            break;
-          }
-
-          chantError = insertResponse.error;
-          insertErrors.push(`${attempt.label}: ${insertResponse.error?.message || "unknown error"}`);
-
-          console.error("submitFanChant: pack-assisted chants insert attempt failed", {
-            attempt: attempt.label,
-            battleSlug,
-            matchId: resolvedMatchId,
-            chantPackId: createdPackId,
-            payloadKeys: Object.keys(attempt.payload),
-            error: insertResponse.error,
-          });
-        }
-      }
+    if (packError || !pack?.id) {
+      console.warn("submitFanChant: unable to create chant pack before insert", {
+        battleSlug,
+        matchId: resolvedMatchId,
+        error: packError,
+      });
+    } else {
+      createdPackId = String(pack.id);
     }
 
-    if (chantError || !chantRow) {
+    const seedPayload: Record<string, unknown> = {
+      match_id: resolvedMatchId,
+      battle_id: resolvedMatchId,
+      match_slug: battleSlug,
+      battle_slug: battleSlug,
+      chant_pack_id: createdPackId || undefined,
+      chant_text: chantText,
+      lyrics: chantText,
+      text: chantText,
+      content: chantText,
+      description: chantText,
+      chant: chantText,
+      title,
+      submitted_by: userId,
+      user_id: userId,
+      fan_id: userId,
+      created_by: userId,
+      vote_count: 0,
+      votes: 0,
+      created_at: createdAt,
+      submitted_at: createdAt,
+      club_id: clubId || undefined,
+      official: false,
+    };
+
+    const adaptiveInsert = await adaptiveInsertChant(seedPayload);
+    const chantRow = adaptiveInsert.row;
+    const chantErrorMessage = adaptiveInsert.errorMessage;
+
+    if (!chantRow) {
       console.error("submitFanChant: failed creating chant", {
         battleSlug,
         matchId: resolvedMatchId,
-        error: chantError,
+        errorMessage: chantErrorMessage,
+        attempts: adaptiveInsert.attemptMessages,
       });
 
       // Best-effort cleanup if the fallback path created a pack but chant insert still failed.
@@ -507,20 +358,11 @@ export async function submitFanChant(
         }
       }
 
-      if ((chantError?.message || "").includes("submission_limit_reached")) {
+      if ((chantErrorMessage || "").includes("submission_limit_reached")) {
         return {
           success: false,
           message: `You can submit up to ${MAX_CHANTS_PER_USER} chants per battle.`,
         };
-      }
-
-      const detailedError = (chantError?.message || "").trim();
-      if (detailedError) {
-        const compactAttemptErrors = insertErrors.slice(0, 30).join(" | ");
-        const detailSuffix = compactAttemptErrors
-          ? `${detailedError} [${compactAttemptErrors}]`
-          : detailedError;
-        return { success: false, message: `Could not save your chant: ${detailSuffix}` };
       }
 
       return { success: false, message: "Could not save your chant." };
