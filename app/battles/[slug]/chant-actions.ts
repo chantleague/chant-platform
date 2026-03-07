@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { supabase } from "@/app/lib/supabase";
+import { supabaseServer as supabase } from "@/app/lib/supabaseServer";
 
 const MAX_CHANTS_PER_USER = 2;
 

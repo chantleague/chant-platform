@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { slugify } from "@/app/lib/canonicalClubRegistry";
-import { supabase } from "@/app/lib/supabase";
+import { supabaseServer as supabase } from "@/app/lib/supabaseServer";
 import { generateChant } from "@/lib/ai/generateChant";
 import { generateChantAudio } from "@/lib/ai/generateChantAudio";
 

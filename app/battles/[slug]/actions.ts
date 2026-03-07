@@ -1,6 +1,6 @@
 "use server";
 
-import { supabase } from "@/app/lib/supabase";
+import { supabaseServer as supabase } from "@/app/lib/supabaseServer";
 import { revalidatePath } from "next/cache";
 
 interface VoteResult {
