@@ -455,6 +455,11 @@ export async function submitFanChant(
         };
       }
 
+      const detailedError = (chantError?.message || "").trim();
+      if (detailedError) {
+        return { success: false, message: `Could not save your chant: ${detailedError}` };
+      }
+
       return { success: false, message: "Could not save your chant." };
     }
 
