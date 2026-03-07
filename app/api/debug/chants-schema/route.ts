@@ -2,23 +2,36 @@ import { NextResponse } from "next/server";
 import { supabaseServer as supabase } from "@/app/lib/supabaseServer";
 
 export async function GET() {
-  const { data, error } = await supabase
-    .from("information_schema.columns")
-    .select("column_name, data_type, is_nullable, ordinal_position")
-    .eq("table_schema", "public")
-    .eq("table_name", "chants")
-    .order("ordinal_position", { ascending: true });
+  const sampleResponse = await supabase
+    .from("chants")
+    .select("*")
+    .limit(1);
 
-  if (error) {
+  if (sampleResponse.error) {
     return NextResponse.json(
       {
-        error: error.message,
-        details: error.details,
-        code: error.code,
+        error: sampleResponse.error.message,
+        details: sampleResponse.error.details,
+        code: sampleResponse.error.code,
       },
       { status: 500 },
     );
   }
 
-  return NextResponse.json({ columns: data || [] }, { status: 200 });
+  const sampleRow = (sampleResponse.data || [])[0] as Record<string, unknown> | undefined;
+  const sampleKeys = sampleRow ? Object.keys(sampleRow) : [];
+
+  const countResponse = await supabase
+    .from("chants")
+    .select("id", { count: "exact", head: true });
+
+  return NextResponse.json(
+    {
+      totalRows: countResponse.count ?? null,
+      sampleKeys,
+      sampleRow,
+      countError: countResponse.error ? countResponse.error.message : null,
+    },
+    { status: 200 },
+  );
 }
