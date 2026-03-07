@@ -340,13 +340,9 @@ export async function submitFanChant(
       });
     }
 
-    const needsPackAssistedFallback =
-      Boolean(chantError) &&
-      /(chant_pack_id|not-null|null value in column "chant_pack_id")/i.test(chantError?.message || "");
-
     let createdPackId: string | null = null;
 
-    if (!chantRow && needsPackAssistedFallback) {
+    if (!chantRow) {
       const { data: pack, error: packError } = await supabase
         .from("chant_packs")
         .insert([
