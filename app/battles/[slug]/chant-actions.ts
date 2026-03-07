@@ -6,7 +6,7 @@ import { supabase } from "@/app/lib/supabase";
 const MAX_CHANTS_PER_USER = 2;
 
 interface SubmitFanChantInput {
-  battleId: string;
+  battleId?: string;
   battleSlug: string;
   userId: string;
   title?: string;
@@ -19,6 +19,13 @@ interface SubmitFanChantResult {
   success: boolean;
   message: string;
   chantId?: string;
+  chant?: Record<string, unknown>;
+}
+
+interface ResolvedBattle {
+  id: string;
+  status: string | null;
+  startsAt: string | null;
 }
 
 interface LinkFanChantAudioInput {
@@ -51,11 +58,72 @@ function isSubmissionWindowOpen(status?: string | null, startsAt?: string | null
   return Date.now() < kickoff;
 }
 
+async function resolveBattleBySlug(
+  battleSlug: string,
+  requestedBattleId?: string,
+): Promise<{ battle: ResolvedBattle | null; errorMessage?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from("matches")
+      .select("id, status, starts_at")
+      .eq("slug", battleSlug)
+      .maybeSingle();
+
+    if (error) {
+      console.error("submitFanChant: battle slug lookup failed", {
+        battleSlug,
+        requestedBattleId,
+        error,
+      });
+      return {
+        battle: null,
+        errorMessage: "Could not look up this battle right now.",
+      };
+    }
+
+    if (!data?.id) {
+      return {
+        battle: null,
+        errorMessage: `Could not find battle \"${battleSlug}\".`,
+      };
+    }
+
+    const resolvedBattleId = String(data.id);
+    const trimmedRequestedId = requestedBattleId?.trim();
+
+    if (trimmedRequestedId && trimmedRequestedId !== resolvedBattleId) {
+      console.warn("submitFanChant: supplied battleId did not match slug lookup", {
+        battleSlug,
+        suppliedBattleId: trimmedRequestedId,
+        resolvedBattleId,
+      });
+    }
+
+    return {
+      battle: {
+        id: resolvedBattleId,
+        status: data.status ? String(data.status) : null,
+        startsAt: data.starts_at ? String(data.starts_at) : null,
+      },
+    };
+  } catch (error) {
+    console.error("submitFanChant: unexpected battle slug lookup error", {
+      battleSlug,
+      requestedBattleId,
+      error,
+    });
+    return {
+      battle: null,
+      errorMessage: "Could not look up this battle right now.",
+    };
+  }
+}
+
 export async function submitFanChant(
   input: SubmitFanChantInput,
 ): Promise<SubmitFanChantResult> {
   const battleId = input.battleId?.trim();
-  const battleSlug = input.battleSlug?.trim();
+  const battleSlug = input.battleSlug?.trim().toLowerCase();
   const userId = input.userId?.trim();
   const clubId = input.clubId?.trim() || null;
   const chantText = (input.chantText || input.lyrics || "").trim().slice(0, 500);
@@ -69,7 +137,7 @@ export async function submitFanChant(
     .trim();
   const title = (requestedTitle || inferredTitle || "Fan Chant").slice(0, 80);
 
-  if (!battleId || !battleSlug || !userId || !title || !chantText) {
+  if (!battleSlug || !userId || !title || !chantText) {
     return { success: false, message: "Missing chant submission information." };
   }
 
@@ -81,19 +149,22 @@ export async function submitFanChant(
   }
 
   try {
-    const { data: battle, error: battleError } = await supabase
-      .from("matches")
-      .select("id, status, starts_at")
-      .eq("id", battleId)
-      .single();
+    const { battle, errorMessage: battleLookupMessage } = await resolveBattleBySlug(
+      battleSlug,
+      battleId,
+    );
 
-    if (battleError || !battle) {
-      console.error("submitFanChant: failed to fetch battle", battleError);
-      return { success: false, message: "Could not find this battle." };
+    if (!battle) {
+      return {
+        success: false,
+        message: battleLookupMessage || "Could not find this battle.",
+      };
     }
 
-    const status = (battle.status as string | null) || null;
-    const startsAt = (battle.starts_at as string | null) || null;
+    const resolvedBattleId = battle.id;
+
+    const status = battle.status;
+    const startsAt = battle.startsAt;
 
     if (!isSubmissionWindowOpen(status, startsAt)) {
       return {
@@ -107,13 +178,15 @@ export async function submitFanChant(
     const { count, error: countError } = await supabase
       .from("chants")
       .select("id", { count: "exact", head: true })
-      .eq("battle_id", battleId)
+      .eq("battle_id", resolvedBattleId)
       .eq("submitted_by", userId);
 
     if (countError) {
       // MVP fallback: do not block submission if count validation is unavailable.
       console.warn("submitFanChant: submission limit check unavailable, allowing insert", {
         battleId,
+        resolvedBattleId,
+        battleSlug,
         userId,
         error: countError.message,
       });
@@ -122,6 +195,8 @@ export async function submitFanChant(
     } else {
       console.warn("submitFanChant: submission limit count returned null, allowing insert", {
         battleId,
+        resolvedBattleId,
+        battleSlug,
         userId,
       });
     }
@@ -137,7 +212,7 @@ export async function submitFanChant(
       .from("chant_packs")
       .insert([
         {
-          match_id: battleId,
+          match_id: resolvedBattleId,
           title,
           description: chantText,
           official: false,
@@ -152,56 +227,101 @@ export async function submitFanChant(
     }
 
     const chantPackId = pack.id as string;
+    const createdAt = new Date().toISOString();
 
-    const legacyInsertPayload: Record<string, unknown> = {
-      battle_id: battleId,
+    const schemaAlignedPayload: Record<string, unknown> = {
+      battle_id: resolvedBattleId,
+      chant_pack_id: chantPackId,
+      title,
+      chant_text: chantText,
+      lyrics: chantText,
+      submitted_by: userId,
+      created_at: createdAt,
+      vote_count: 0,
+      club_id: clubId,
+      audio_url: null,
+    };
+
+    const noVoteCountPayload: Record<string, unknown> = {
+      battle_id: resolvedBattleId,
+      chant_pack_id: chantPackId,
+      title,
+      chant_text: chantText,
+      lyrics: chantText,
+      submitted_by: userId,
+      created_at: createdAt,
+      club_id: clubId,
+      audio_url: null,
+    };
+
+    const leanPayload: Record<string, unknown> = {
+      battle_id: resolvedBattleId,
+      chant_pack_id: chantPackId,
+      title,
+      chant_text: chantText,
+      lyrics: chantText,
+      submitted_by: userId,
+      created_at: createdAt,
+    };
+
+    const legacyPayloadWithCreatedAt: Record<string, unknown> = {
+      battle_id: resolvedBattleId,
+      chant_pack_id: chantPackId,
+      title,
+      lyrics: chantText,
+      submitted_by: userId,
+      created_at: createdAt,
+    };
+
+    const legacyPayload: Record<string, unknown> = {
+      battle_id: resolvedBattleId,
       chant_pack_id: chantPackId,
       title,
       lyrics: chantText,
       submitted_by: userId,
     };
 
-    const audioInsertPayload: Record<string, unknown> = {
-      ...legacyInsertPayload,
-      audio_url: null,
-    };
+    const insertAttempts: Array<{ label: string; payload: Record<string, unknown> }> = [
+      { label: "schema-aligned", payload: schemaAlignedPayload },
+      { label: "without-vote-count", payload: noVoteCountPayload },
+      { label: "lean", payload: leanPayload },
+      { label: "legacy-with-created-at", payload: legacyPayloadWithCreatedAt },
+      { label: "legacy", payload: legacyPayload },
+    ];
 
-    const extendedInsertPayload: Record<string, unknown> = {
-      ...audioInsertPayload,
-      club_id: clubId,
-      chant_text: chantText,
-    };
+    let chantRow: Record<string, unknown> | null = null;
+    let chantError: { message?: string } | null = null;
 
-    const initialInsert = await supabase
-      .from("chants")
-      .insert([
-        extendedInsertPayload,
-      ])
-      .select("id")
-      .single();
-
-    let chantRow = initialInsert.data;
-    let chantError = initialInsert.error;
-
-    if (chantError) {
-      const fallbackInsert = await supabase
+    for (const attempt of insertAttempts) {
+      const insertResponse = await supabase
         .from("chants")
-        .insert([audioInsertPayload])
-        .select("id")
+        .insert([attempt.payload])
+        .select("*")
         .single();
 
-      chantRow = fallbackInsert.data;
-      chantError = fallbackInsert.error;
+      if (!insertResponse.error && insertResponse.data) {
+        chantRow = insertResponse.data as Record<string, unknown>;
+        chantError = null;
+        break;
+      }
 
-      if (chantError && /audio_url/i.test(chantError.message || "")) {
-        const legacyFallbackInsert = await supabase
-          .from("chants")
-          .insert([legacyInsertPayload])
-          .select("id")
-          .single();
+      chantError = insertResponse.error;
 
-        chantRow = legacyFallbackInsert.data;
-        chantError = legacyFallbackInsert.error;
+      console.error("submitFanChant: chants insert attempt failed", {
+        attempt: attempt.label,
+        battleSlug,
+        battleId: resolvedBattleId,
+        chantPackId,
+        payloadKeys: Object.keys(attempt.payload),
+        error: insertResponse.error,
+      });
+
+      const isSchemaDriftError = /(column .* does not exist|audio_url|club_id|chant_text|vote_count)/i.test(
+        insertResponse.error?.message || "",
+      );
+
+      if (!isSchemaDriftError) {
+        break;
       }
     }
 
@@ -232,6 +352,7 @@ export async function submitFanChant(
       success: true,
       message: "Chant submitted. Rally your fans to vote.",
       chantId: chantRow?.id ? String(chantRow.id) : undefined,
+      chant: chantRow || undefined,
     };
   } catch (error) {
     console.error("submitFanChant: unexpected error", error);
