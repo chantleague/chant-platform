@@ -63,7 +63,7 @@ export interface FanChant {
   id: string;
   match_id: string;
   battle_id?: string;
-  chant_pack_id: string;
+  chant_pack_id?: string | null;
   club_id?: string | null;
   title: string;
   chant_text?: string | null;
