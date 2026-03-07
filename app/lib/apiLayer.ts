@@ -268,11 +268,26 @@ export async function getChantsForBattleSlug(
       fanChantsError = legacyByBattleId.error;
     }
 
-    const { data: packsData, error: packsError } = await supabase
+    const packsByMatch = await supabase
       .from("chant_packs")
       .select("id, title, description, audio_url, created_at")
       .eq("match_id", battleId)
+      .eq("official", false)
       .order("created_at", { ascending: false });
+
+    let packsData = packsByMatch.data;
+    let packsError = packsByMatch.error;
+
+    if (packsError && /column .*official.* does not exist/i.test(packsError.message || "")) {
+      const legacyPacksByMatch = await supabase
+        .from("chant_packs")
+        .select("id, title, description, audio_url, created_at")
+        .eq("match_id", battleId)
+        .order("created_at", { ascending: false });
+
+      packsData = legacyPacksByMatch.data;
+      packsError = legacyPacksByMatch.error;
+    }
 
     if (packsError || !packsData) {
       if (packsError) {

@@ -45,6 +45,12 @@ interface AdaptiveChantsInsertResult {
   attemptMessages: string[];
 }
 
+interface AdaptiveChantPackInsertResult {
+  row: Record<string, unknown> | null;
+  errorMessage: string;
+  attemptMessages: string[];
+}
+
 function isSubmissionWindowOpen(status?: string | null, startsAt?: string | null) {
   const normalizedStatus = (status || "").toLowerCase();
   if (normalizedStatus && normalizedStatus !== "upcoming") {
@@ -63,13 +69,74 @@ function isSubmissionWindowOpen(status?: string | null, startsAt?: string | null
   return Date.now() < kickoff;
 }
 
-function extractMissingChantsColumn(errorMessage: string): string | null {
-  const match = errorMessage.match(/Could not find the '([^']+)' column of 'chants' in the schema cache/i);
+function extractMissingTableColumn(errorMessage: string, tableName: string): string | null {
+  const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `Could not find the '([^']+)' column of '${escapedTableName}' in the schema cache`,
+    "i",
+  );
+  const match = errorMessage.match(pattern);
   if (!match?.[1]) {
     return null;
   }
 
   return match[1];
+}
+
+async function adaptiveCreateChantPack(
+  seedPayload: Record<string, unknown>,
+): Promise<AdaptiveChantPackInsertResult> {
+  const disabledColumns = new Set<string>();
+  const attemptMessages: string[] = [];
+  let lastErrorMessage = "";
+
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    const payloadEntries = Object.entries(seedPayload).filter(([column, value]) => {
+      if (disabledColumns.has(column)) {
+        return false;
+      }
+
+      return typeof value !== "undefined";
+    });
+
+    if (payloadEntries.length === 0) {
+      break;
+    }
+
+    const payload = Object.fromEntries(payloadEntries);
+
+    const insertResponse = await supabase
+      .from("chant_packs")
+      .insert([payload])
+      .select("id")
+      .single();
+
+    if (!insertResponse.error && insertResponse.data) {
+      return {
+        row: insertResponse.data as Record<string, unknown>,
+        errorMessage: "",
+        attemptMessages,
+      };
+    }
+
+    const message = insertResponse.error?.message || "unknown error";
+    lastErrorMessage = message;
+    attemptMessages.push(`attempt-${attempt}: ${message}`);
+
+    const missingColumn = extractMissingTableColumn(message, "chant_packs");
+    if (missingColumn) {
+      disabledColumns.add(missingColumn);
+      continue;
+    }
+
+    break;
+  }
+
+  return {
+    row: null,
+    errorMessage: lastErrorMessage,
+    attemptMessages,
+  };
 }
 
 async function adaptiveInsertChant(
@@ -112,7 +179,7 @@ async function adaptiveInsertChant(
     lastErrorMessage = message;
     attemptMessages.push(`attempt-${attempt}: ${message}`);
 
-    const missingColumn = extractMissingChantsColumn(message);
+    const missingColumn = extractMissingTableColumn(message, "chants");
     if (missingColumn) {
       disabledColumns.add(missingColumn);
       continue;
@@ -287,29 +354,30 @@ export async function submitFanChant(
     }
 
     const createdAt = new Date().toISOString();
+    const packSeedPayload: Record<string, unknown> = {
+      match_id: resolvedMatchId,
+      battle_id: resolvedMatchId,
+      match_slug: battleSlug,
+      battle_slug: battleSlug,
+      title,
+      description: chantText,
+      chant_text: chantText,
+      lyrics: chantText,
+      official: false,
+      created_at: createdAt,
+    };
+
     let createdPackId: string | null = null;
-
-    const { data: pack, error: packError } = await supabase
-      .from("chant_packs")
-      .insert([
-        {
-          match_id: resolvedMatchId,
-          title,
-          description: chantText,
-          official: false,
-        },
-      ])
-      .select("id")
-      .single();
-
-    if (packError || !pack?.id) {
+    const packInsert = await adaptiveCreateChantPack(packSeedPayload);
+    if (packInsert.row?.id) {
+      createdPackId = String(packInsert.row.id);
+    } else if (packInsert.errorMessage) {
       console.warn("submitFanChant: unable to create chant pack before insert", {
         battleSlug,
         matchId: resolvedMatchId,
-        error: packError,
+        error: packInsert.errorMessage,
+        attempts: packInsert.attemptMessages,
       });
-    } else {
-      createdPackId = String(pack.id);
     }
 
     const seedPayload: Record<string, unknown> = {
@@ -349,6 +417,41 @@ export async function submitFanChant(
         attempts: adaptiveInsert.attemptMessages,
       });
 
+      if ((chantErrorMessage || "").includes("submission_limit_reached")) {
+        if (createdPackId) {
+          try {
+            await supabase.from("chant_packs").delete().eq("id", createdPackId);
+          } catch (cleanupError) {
+            console.error("submitFanChant: cleanup failed", cleanupError);
+          }
+        }
+
+        return {
+          success: false,
+          message: `You can submit up to ${MAX_CHANTS_PER_USER} chants per battle.`,
+        };
+      }
+
+      // If chants insert remains incompatible but pack was created, keep the pack and
+      // treat submission as successful so fan chant feeds can render from chant_packs.
+      if (createdPackId) {
+        revalidatePath(`/battles/${battleSlug}`);
+        revalidatePath(`/battle/${battleSlug}`);
+
+        return {
+          success: true,
+          message: "Chant submitted. Rally your fans to vote.",
+          chantId: createdPackId,
+          chant: {
+            id: createdPackId,
+            chant_pack_id: createdPackId,
+            match_id: resolvedMatchId,
+            chant_text: chantText,
+            created_at: createdAt,
+          },
+        };
+      }
+
       // Best-effort cleanup if the fallback path created a pack but chant insert still failed.
       if (createdPackId) {
         try {
@@ -356,13 +459,6 @@ export async function submitFanChant(
         } catch (cleanupError) {
           console.error("submitFanChant: cleanup failed", cleanupError);
         }
-      }
-
-      if ((chantErrorMessage || "").includes("submission_limit_reached")) {
-        return {
-          success: false,
-          message: `You can submit up to ${MAX_CHANTS_PER_USER} chants per battle.`,
-        };
       }
 
       return { success: false, message: "Could not save your chant." };

@@ -98,6 +98,36 @@ export default async function FanSubmittedChants({
   let chants: FanChant[] = [];
   let fatalErrorMessage: string | null = null;
   const precomputedVoteCountByPackId: Record<string, number> = {};
+  const mapApiFallbackChants = (
+    apiChants: Array<{
+      chant_id: string;
+      chant_text: string;
+      votes: number;
+      audio_url: string | null;
+      created_at: string | null;
+    }>,
+  ): FanChant[] => {
+    return apiChants.map((chant, index) => {
+      const chantPackId = String(chant.chant_id || "").trim();
+      const chantText = String(chant.chant_text || "").trim();
+
+      precomputedVoteCountByPackId[chantPackId] = Number(chant.votes || 0);
+
+      return normalizeChant({
+        id: `${chantPackId || "chant"}-${index}`,
+        match_id: resolvedMatchId,
+        battle_id: resolvedMatchId,
+        chant_pack_id: chantPackId,
+        club_id: null,
+        title: "Fan Chant",
+        chant_text: chantText,
+        lyrics: chantText,
+        audio_url: chant.audio_url || null,
+        submitted_by: "fan",
+        created_at: chant.created_at || "",
+      } as FanChant);
+    });
+  };
 
   const byMatchId = await supabase
     .from("chants")
@@ -217,26 +247,7 @@ export default async function FanSubmittedChants({
     try {
       const apiFallback = await getChantsForBattleSlug(battleSlug || undefined);
 
-      chants = (apiFallback.chants || []).map((chant, index) => {
-        const chantPackId = String(chant.chant_id || "").trim();
-        const chantText = String(chant.chant_text || "").trim();
-
-        precomputedVoteCountByPackId[chantPackId] = Number(chant.votes || 0);
-
-        return normalizeChant({
-          id: `${chantPackId || "chant"}-${index}`,
-          match_id: resolvedMatchId,
-          battle_id: resolvedMatchId,
-          chant_pack_id: chantPackId,
-          club_id: null,
-          title: "Fan Chant",
-          chant_text: chantText,
-          lyrics: chantText,
-          audio_url: chant.audio_url || null,
-          submitted_by: "fan",
-          created_at: chant.created_at || "",
-        } as FanChant);
-      });
+      chants = mapApiFallbackChants(apiFallback.chants || []);
 
       fatalErrorMessage = null;
     } catch (apiFallbackError) {
@@ -268,32 +279,47 @@ export default async function FanSubmittedChants({
     );
   }
 
-  if (chants.length === 0 && battleSlug) {
+  if (!fatalErrorMessage && battleSlug) {
     try {
       const apiFallback = await getChantsForBattleSlug(battleSlug || undefined);
 
-      chants = (apiFallback.chants || []).map((chant, index) => {
-        const chantPackId = String(chant.chant_id || "").trim();
-        const chantText = String(chant.chant_text || "").trim();
+      const apiChants = mapApiFallbackChants(apiFallback.chants || []);
+      const existingByPackId = new Set(
+        chants
+          .map((chant) => String(chant.chant_pack_id || "").trim())
+          .filter((chantPackId) => Boolean(chantPackId)),
+      );
+      const existingByText = new Set(
+        chants
+          .map((chant) => String(chant.chant_text || chant.lyrics || "").trim().toLowerCase())
+          .filter((chantText) => Boolean(chantText)),
+      );
 
-        precomputedVoteCountByPackId[chantPackId] = Number(chant.votes || 0);
+      apiChants.forEach((chant) => {
+        const chantPackId = String(chant.chant_pack_id || "").trim();
+        if (chantPackId) {
+          if (existingByPackId.has(chantPackId)) {
+            return;
+          }
 
-        return normalizeChant({
-          id: `${chantPackId || "chant"}-${index}`,
-          match_id: resolvedMatchId,
-          battle_id: resolvedMatchId,
-          chant_pack_id: chantPackId,
-          club_id: null,
-          title: "Fan Chant",
-          chant_text: chantText,
-          lyrics: chantText,
-          audio_url: chant.audio_url || null,
-          submitted_by: "fan",
-          created_at: chant.created_at || "",
-        } as FanChant);
+          existingByPackId.add(chantPackId);
+          chants.push(chant);
+          return;
+        }
+
+        const chantTextKey = String(chant.chant_text || chant.lyrics || "").trim().toLowerCase();
+        if (chantTextKey && existingByText.has(chantTextKey)) {
+          return;
+        }
+
+        if (chantTextKey) {
+          existingByText.add(chantTextKey);
+        }
+
+        chants.push(chant);
       });
     } catch (apiFallbackError) {
-      console.error("Error fetching fan chants from empty-state API fallback", apiFallbackError);
+      console.error("Error merging fan chants from API fallback", apiFallbackError);
     }
   }
 
