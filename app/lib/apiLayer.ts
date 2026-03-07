@@ -1,6 +1,7 @@
 import { CANONICAL_CLUB_REGISTRY, League } from "@/app/lib/canonicalClubRegistry";
 import { mockBattles } from "@/app/lib/mockBattles";
 import { supabase } from "@/app/lib/supabase";
+import { supabaseServer } from "@/app/lib/supabaseServer";
 
 type RawRow = Record<string, unknown>;
 
@@ -26,6 +27,8 @@ type ApiBattle = {
 
 type ApiChant = {
   chant_id: string;
+  chant_row_id: string | null;
+  match_id: string | null;
   chant_text: string;
   votes: number;
   audio_url: string | null;
@@ -48,6 +51,53 @@ interface SubmitVoteResult {
   success: boolean;
   status: number;
   message: string;
+  voteCount?: number;
+}
+
+interface SubmitChantVoteInput {
+  chantRowId?: string;
+  chantPackId?: string;
+  matchId?: string;
+  battleSlug?: string;
+  userIdentifier: string;
+}
+
+interface VoteTarget {
+  column: "chant_id" | "chant_pack_id";
+  value: string;
+}
+
+function isMissingColumnError(errorMessage: string, columnName: string) {
+  if (!errorMessage) {
+    return false;
+  }
+
+  const escapedColumn = columnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(column .*${escapedColumn}.* does not exist|Could not find the '${escapedColumn}' column)`, "i").test(
+    errorMessage,
+  );
+}
+
+function isDuplicateKeyError(errorCode?: string, errorMessage?: string) {
+  if (errorCode === "23505") {
+    return true;
+  }
+
+  return /duplicate|unique/i.test(errorMessage || "");
+}
+
+function toSafeErrorLog(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return { message: String(error || "unknown") };
+  }
+
+  const maybeError = error as { message?: string; code?: string; details?: string; hint?: string };
+  return {
+    message: maybeError.message || "unknown",
+    code: maybeError.code,
+    details: maybeError.details,
+    hint: maybeError.hint,
+  };
 }
 
 function deriveShortName(name: string) {
@@ -252,19 +302,19 @@ export async function getChantsForBattleSlug(
 
     const fanChantsByMatch = await supabase
       .from("chants")
-      .select("chant_pack_id, lyrics")
+      .select("id, match_id, chant_pack_id, lyrics")
       .eq("match_id", battleId);
 
-    let fanChantsData = fanChantsByMatch.data;
+    let fanChantsData = fanChantsByMatch.data as RawRow[] | null;
     let fanChantsError = fanChantsByMatch.error;
 
     if (fanChantsError && /column .*match_id.* does not exist/i.test(fanChantsError.message || "")) {
       const legacyByBattleId = await supabase
         .from("chants")
-        .select("chant_pack_id, lyrics")
+        .select("id, battle_id, chant_pack_id, lyrics")
         .eq("battle_id", battleId);
 
-      fanChantsData = legacyByBattleId.data;
+      fanChantsData = legacyByBattleId.data as RawRow[] | null;
       fanChantsError = legacyByBattleId.error;
     }
 
@@ -301,10 +351,26 @@ export async function getChantsForBattleSlug(
     }
 
     const lyricsByPackId: Record<string, string> = {};
+    const chantMetaByPackId: Record<
+      string,
+      {
+        chantRowId: string | null;
+        matchId: string | null;
+      }
+    > = {};
+
     (((fanChantsData as RawRow[] | null) || [])).forEach((chant) => {
       const chantPackId = String(chant.chant_pack_id || "");
       if (chantPackId) {
         lyricsByPackId[chantPackId] = String(chant.lyrics || "").trim();
+        chantMetaByPackId[chantPackId] = {
+          chantRowId: chant.id ? String(chant.id) : null,
+          matchId: chant.match_id
+            ? String(chant.match_id)
+            : chant.battle_id
+              ? String(chant.battle_id)
+              : battleId,
+        };
       }
     });
 
@@ -312,36 +378,73 @@ export async function getChantsForBattleSlug(
       .map((pack) => String(pack.id || ""))
       .filter((id) => Boolean(id));
 
-    const voteCountMap: Record<string, number> = {};
+    const voteCountByPackId: Record<string, number> = {};
+    const voteCountByChantId: Record<string, number> = {};
 
     if (chantPackIds.length > 0) {
-      const { data: votesData, error: votesError } = await supabase
-        .from("chant_votes")
-        .select("chant_pack_id")
-        .in("chant_pack_id", chantPackIds);
+      const chantIds = Object.values(chantMetaByPackId)
+        .map((meta) => String(meta.chantRowId || ""))
+        .filter((id) => Boolean(id));
 
-      if (votesError) {
-        console.error("api/chants: failed to fetch chant votes", votesError);
-      } else {
-        ((votesData as RawRow[] | null) || []).forEach((voteRow) => {
-          const packId = String(voteRow.chant_pack_id || "");
-          if (packId) {
-            voteCountMap[packId] = (voteCountMap[packId] || 0) + 1;
+      let fetchedByChantId = false;
+
+      if (chantIds.length > 0) {
+        const byChantIdResult = await supabase
+          .from("chant_votes")
+          .select("chant_id")
+          .in("chant_id", chantIds);
+
+        if (byChantIdResult.error) {
+          if (!isMissingColumnError(byChantIdResult.error.message || "", "chant_id")) {
+            console.error("api/chants: failed to fetch chant votes by chant_id", byChantIdResult.error);
           }
-        });
+        } else {
+          fetchedByChantId = true;
+          ((byChantIdResult.data as RawRow[] | null) || []).forEach((voteRow) => {
+            const chantId = String(voteRow.chant_id || "");
+            if (chantId) {
+              voteCountByChantId[chantId] = (voteCountByChantId[chantId] || 0) + 1;
+            }
+          });
+        }
+      }
+
+      if (!fetchedByChantId) {
+        const byPackIdResult = await supabase
+          .from("chant_votes")
+          .select("chant_pack_id")
+          .in("chant_pack_id", chantPackIds);
+
+        if (byPackIdResult.error) {
+          console.error("api/chants: failed to fetch chant votes by chant_pack_id", byPackIdResult.error);
+        } else {
+          ((byPackIdResult.data as RawRow[] | null) || []).forEach((voteRow) => {
+            const packId = String(voteRow.chant_pack_id || "");
+            if (packId) {
+              voteCountByPackId[packId] = (voteCountByPackId[packId] || 0) + 1;
+            }
+          });
+        }
       }
     }
 
     const chants: ApiChant[] = (packsData as RawRow[]).map((pack) => {
       const packId = String(pack.id || "");
+      const chantMeta = chantMetaByPackId[packId];
+      const chantRowId = chantMeta?.chantRowId || null;
       const chantText =
         lyricsByPackId[packId] ||
         String(pack.description || pack.title || "").trim();
 
       return {
         chant_id: packId,
+        chant_row_id: chantRowId,
+        match_id: chantMeta?.matchId || battleId,
         chant_text: chantText,
-        votes: voteCountMap[packId] || 0,
+        votes:
+          (chantRowId && typeof voteCountByChantId[chantRowId] === "number"
+            ? voteCountByChantId[chantRowId]
+            : voteCountByPackId[packId]) || 0,
         audio_url: pack.audio_url ? String(pack.audio_url) : null,
         created_at: pack.created_at ? String(pack.created_at) : null,
       };
@@ -354,88 +457,231 @@ export async function getChantsForBattleSlug(
   }
 }
 
-export async function submitChantVote(
-  chantId: string,
-  userIdentifier: string,
-): Promise<SubmitVoteResult> {
-  const normalizedChantId = chantId.trim();
-  const normalizedUser = userIdentifier.trim();
+export async function submitChantVote(input: SubmitChantVoteInput): Promise<SubmitVoteResult> {
+  const normalizedUser = String(input.userIdentifier || "").trim();
+  const normalizedChantRowId = String(input.chantRowId || "").trim();
+  const normalizedChantPackId = String(input.chantPackId || "").trim();
+  const normalizedBattleSlug = String(input.battleSlug || "").trim().toLowerCase();
+  const normalizedMatchId = String(input.matchId || "").trim();
 
-  if (!normalizedChantId || !normalizedUser) {
+  if (!normalizedUser || (!normalizedChantRowId && !normalizedChantPackId)) {
     return {
       success: false,
       status: 400,
-      message: "chant_id and user_identifier are required.",
+      message: "user_identifier and chant identifier are required.",
     };
   }
 
+  let resolvedChantRowId = normalizedChantRowId || null;
+  let resolvedChantPackId = normalizedChantPackId || null;
+  let resolvedMatchId = normalizedMatchId || null;
+
   try {
-    const { data: packData, error: packError } = await supabase
-      .from("chant_packs")
-      .select("id")
-      .eq("id", normalizedChantId)
-      .single();
+    if (resolvedChantRowId) {
+      const chantRowResult = await supabaseServer
+        .from("chants")
+        .select("id, match_id, battle_id, chant_pack_id, submitted_by")
+        .eq("id", resolvedChantRowId)
+        .maybeSingle();
 
-    if (packError || !packData?.id) {
-      return {
-        success: false,
-        status: 404,
-        message: "Chant not found.",
-      };
+      if (chantRowResult.error) {
+        console.error("api/votes: chant row lookup failed", {
+          chantRowId: resolvedChantRowId,
+          error: toSafeErrorLog(chantRowResult.error),
+        });
+
+        return {
+          success: false,
+          status: 500,
+          message: "Could not validate chant.",
+        };
+      }
+
+      if (!chantRowResult.data?.id) {
+        return {
+          success: false,
+          status: 404,
+          message: "Chant not found.",
+        };
+      }
+
+      const ownerId = chantRowResult.data.submitted_by
+        ? String(chantRowResult.data.submitted_by)
+        : null;
+      if (ownerId && ownerId === normalizedUser) {
+        return {
+          success: false,
+          status: 403,
+          message: "Users cannot vote on their own chants.",
+        };
+      }
+
+      resolvedChantPackId = chantRowResult.data.chant_pack_id
+        ? String(chantRowResult.data.chant_pack_id)
+        : resolvedChantPackId;
+
+      resolvedMatchId = chantRowResult.data.match_id
+        ? String(chantRowResult.data.match_id)
+        : chantRowResult.data.battle_id
+          ? String(chantRowResult.data.battle_id)
+          : resolvedMatchId;
     }
 
-    const { data: ownerData, error: ownerError } = await supabase
-      .from("chants")
-      .select("submitted_by")
-      .eq("chant_pack_id", normalizedChantId)
-      .maybeSingle();
+    if (!resolvedChantRowId && resolvedChantPackId) {
+      const chantByPackResult = await supabaseServer
+        .from("chants")
+        .select("id, match_id, battle_id, submitted_by")
+        .eq("chant_pack_id", resolvedChantPackId)
+        .maybeSingle();
 
-    if (ownerError) {
-      console.error("api/votes: failed to fetch chant owner", ownerError);
+      if (chantByPackResult.error) {
+        console.error("api/votes: chant pack lookup failed", {
+          chantPackId: resolvedChantPackId,
+          error: toSafeErrorLog(chantByPackResult.error),
+        });
+      } else if (chantByPackResult.data?.id) {
+        resolvedChantRowId = String(chantByPackResult.data.id);
+
+        const ownerId = chantByPackResult.data.submitted_by
+          ? String(chantByPackResult.data.submitted_by)
+          : null;
+        if (ownerId && ownerId === normalizedUser) {
+          return {
+            success: false,
+            status: 403,
+            message: "Users cannot vote on their own chants.",
+          };
+        }
+
+        if (!resolvedMatchId) {
+          resolvedMatchId = chantByPackResult.data.match_id
+            ? String(chantByPackResult.data.match_id)
+            : chantByPackResult.data.battle_id
+              ? String(chantByPackResult.data.battle_id)
+              : null;
+        }
+      }
     }
 
-    const ownerId = ownerData?.submitted_by ? String(ownerData.submitted_by) : null;
-    if (ownerId && ownerId === normalizedUser) {
-      return {
-        success: false,
-        status: 403,
-        message: "Users cannot vote on their own chants.",
-      };
+    if (normalizedBattleSlug) {
+      const matchBySlugResult = await supabaseServer
+        .from("matches")
+        .select("id")
+        .eq("slug", normalizedBattleSlug)
+        .maybeSingle();
+
+      if (matchBySlugResult.error) {
+        console.error("api/votes: battle slug lookup failed", {
+          battleSlug: normalizedBattleSlug,
+          error: toSafeErrorLog(matchBySlugResult.error),
+        });
+
+        return {
+          success: false,
+          status: 500,
+          message: "Could not validate battle.",
+        };
+      }
+
+      if (!matchBySlugResult.data?.id) {
+        return {
+          success: false,
+          status: 404,
+          message: "Battle not found.",
+        };
+      }
+
+      const slugMatchId = String(matchBySlugResult.data.id);
+      if (resolvedMatchId && resolvedMatchId !== slugMatchId) {
+        console.error("api/votes: chant vote blocked due to match mismatch", {
+          battleSlug: normalizedBattleSlug,
+          expectedMatchId: slugMatchId,
+          receivedMatchId: resolvedMatchId,
+          chantRowId: resolvedChantRowId,
+          chantPackId: resolvedChantPackId,
+        });
+
+        return {
+          success: false,
+          status: 409,
+          message: "Chant does not belong to this battle.",
+        };
+      }
+
+      resolvedMatchId = slugMatchId;
     }
 
-    const { data: existingVote, error: existingVoteError } = await supabase
-      .from("chant_votes")
-      .select("id")
-      .eq("chant_pack_id", normalizedChantId)
-      .eq("user_id", normalizedUser)
-      .limit(1);
+    if (normalizedMatchId && resolvedMatchId && normalizedMatchId !== resolvedMatchId) {
+      console.error("api/votes: chant vote blocked due to provided match mismatch", {
+        providedMatchId: normalizedMatchId,
+        resolvedMatchId,
+        chantRowId: resolvedChantRowId,
+        chantPackId: resolvedChantPackId,
+      });
 
-    if (existingVoteError) {
-      console.error("api/votes: failed duplicate check", existingVoteError);
-      return {
-        success: false,
-        status: 500,
-        message: "Could not validate vote.",
-      };
-    }
-
-    if ((existingVote || []).length > 0) {
       return {
         success: false,
         status: 409,
-        message: "User has already voted for this chant.",
+        message: "Chant does not belong to this match.",
       };
     }
 
-    const { error: insertError } = await supabase.from("chant_votes").insert([
-      {
-        chant_pack_id: normalizedChantId,
-        user_id: normalizedUser,
-      },
-    ]);
+    const voteTargets: VoteTarget[] = [];
+    if (resolvedChantRowId) {
+      voteTargets.push({
+        column: "chant_id",
+        value: resolvedChantRowId,
+      });
+    }
 
-    if (insertError) {
-      if ((insertError.message || "").toLowerCase().includes("duplicate")) {
+    if (resolvedChantPackId) {
+      voteTargets.push({
+        column: "chant_pack_id",
+        value: resolvedChantPackId,
+      });
+    }
+
+    if (voteTargets.length === 0) {
+      return {
+        success: false,
+        status: 400,
+        message: "Could not determine chant vote target.",
+      };
+    }
+
+    const skippedColumns: string[] = [];
+    let lastSchemaError: string | null = null;
+
+    for (const target of voteTargets) {
+      const duplicateCheck = await supabaseServer
+        .from("chant_votes")
+        .select("id")
+        .eq(target.column, target.value)
+        .eq("user_id", normalizedUser)
+        .limit(1);
+
+      if (duplicateCheck.error) {
+        const duplicateCheckMessage = duplicateCheck.error.message || "";
+        if (isMissingColumnError(duplicateCheckMessage, target.column)) {
+          skippedColumns.push(`duplicate-check:${target.column}`);
+          lastSchemaError = duplicateCheckMessage;
+          continue;
+        }
+
+        console.error("api/votes: duplicate check failed", {
+          target,
+          userIdentifier: normalizedUser,
+          error: toSafeErrorLog(duplicateCheck.error),
+        });
+
+        return {
+          success: false,
+          status: 500,
+          message: "Could not validate vote.",
+        };
+      }
+
+      if ((duplicateCheck.data || []).length > 0) {
         return {
           success: false,
           status: 409,
@@ -443,21 +689,107 @@ export async function submitChantVote(
         };
       }
 
-      console.error("api/votes: insert failed", insertError);
+      const votePayload: Record<string, string> = {
+        user_id: normalizedUser,
+        [target.column]: target.value,
+      };
+
+      const insertResult = await supabaseServer.from("chant_votes").insert([votePayload]);
+      if (insertResult.error) {
+        const insertMessage = insertResult.error.message || "";
+        if (isMissingColumnError(insertMessage, target.column)) {
+          skippedColumns.push(`insert:${target.column}`);
+          lastSchemaError = insertMessage;
+          continue;
+        }
+
+        if (isDuplicateKeyError(insertResult.error.code, insertMessage)) {
+          return {
+            success: false,
+            status: 409,
+            message: "User has already voted for this chant.",
+          };
+        }
+
+        console.error("api/votes: insert failed", {
+          target,
+          userIdentifier: normalizedUser,
+          battleSlug: normalizedBattleSlug || null,
+          matchId: resolvedMatchId,
+          error: toSafeErrorLog(insertResult.error),
+        });
+
+        return {
+          success: false,
+          status: 500,
+          message: "Could not record vote.",
+        };
+      }
+
+      const countResult = await supabaseServer
+        .from("chant_votes")
+        .select("id", { count: "exact", head: true })
+        .eq(target.column, target.value);
+
+      let voteCount: number | undefined;
+      if (countResult.error) {
+        console.error("api/votes: vote count query failed", {
+          target,
+          error: toSafeErrorLog(countResult.error),
+        });
+      } else if (typeof countResult.count === "number") {
+        voteCount = countResult.count;
+      }
+
+      if (resolvedChantRowId && typeof voteCount === "number") {
+        const syncVoteCountResult = await supabaseServer
+          .from("chants")
+          .update({ vote_count: voteCount })
+          .eq("id", resolvedChantRowId);
+
+        if (syncVoteCountResult.error) {
+          const syncErrorMessage = syncVoteCountResult.error.message || "";
+          if (!isMissingColumnError(syncErrorMessage, "vote_count")) {
+            console.error("api/votes: chants.vote_count sync failed", {
+              chantRowId: resolvedChantRowId,
+              voteCount,
+              error: toSafeErrorLog(syncVoteCountResult.error),
+            });
+          }
+        }
+      }
+
       return {
-        success: false,
-        status: 500,
-        message: "Could not record vote.",
+        success: true,
+        status: 200,
+        message: "Vote recorded.",
+        voteCount,
       };
     }
 
+    console.error("api/votes: no compatible vote target columns detected", {
+      chantRowId: resolvedChantRowId,
+      chantPackId: resolvedChantPackId,
+      skippedColumns,
+      lastSchemaError,
+    });
+
     return {
-      success: true,
-      status: 200,
-      message: "Vote recorded.",
+      success: false,
+      status: 500,
+      message: "Could not record vote due to vote schema mismatch.",
     };
   } catch (error) {
-    console.error("api/votes: unexpected error", error);
+    console.error("api/votes: unexpected error", {
+      input: {
+        chantRowId: resolvedChantRowId,
+        chantPackId: resolvedChantPackId,
+        matchId: resolvedMatchId,
+        battleSlug: normalizedBattleSlug || null,
+      },
+      error: toSafeErrorLog(error),
+    });
+
     return {
       success: false,
       status: 500,

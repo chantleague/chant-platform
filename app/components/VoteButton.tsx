@@ -1,83 +1,189 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { supabase } from "@/app/lib/supabase";
+import { useEffect, useMemo, useState } from "react";
 
 interface VoteButtonProps {
-  chantPackId: string;
+  chantPackId?: string;
+  chantRowId?: string;
+  matchId?: string;
+  battleSlug?: string;
   voteCount: number;
+  hasVotedOverride?: boolean;
   onVoteChange?: (newCount: number, hasVoted: boolean) => void;
 }
 
-export default function VoteButton({ chantPackId, voteCount, onVoteChange }: VoteButtonProps) {
+interface VoteApiResponse {
+  success?: boolean;
+  message?: string;
+  vote_count?: number;
+}
+
+function getOrCreateFanId() {
+  let id = localStorage.getItem("chant-user-id");
+  if (!id) {
+    id = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    localStorage.setItem("chant-user-id", id);
+  }
+
+  return id;
+}
+
+function buildVoteTargetKey(chantRowId?: string, chantPackId?: string) {
+  const normalizedRowId = String(chantRowId || "").trim();
+  if (normalizedRowId) {
+    return `chant-row:${normalizedRowId}`;
+  }
+
+  const normalizedPackId = String(chantPackId || "").trim();
+  if (normalizedPackId) {
+    return `chant-pack:${normalizedPackId}`;
+  }
+
+  return "";
+}
+
+export default function VoteButton({
+  chantPackId,
+  chantRowId,
+  matchId,
+  battleSlug,
+  voteCount,
+  hasVotedOverride,
+  onVoteChange,
+}: VoteButtonProps) {
   const [votes, setVotes] = useState(voteCount);
   const [hasVoted, setHasVoted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageIsError, setMessageIsError] = useState(false);
 
-  // Initialize user ID from localStorage or create new one
-  useEffect(() => {
-    let id = localStorage.getItem("chant-user-id");
-    if (!id) {
-      id = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem("chant-user-id", id);
+  const targetKey = useMemo(
+    () => buildVoteTargetKey(chantRowId, chantPackId),
+    [chantPackId, chantRowId],
+  );
+
+  const voteMarkerKey = useMemo(() => {
+    if (!targetKey) {
+      return "";
     }
+
+    return `chant-vote:${targetKey}`;
+  }, [targetKey]);
+
+  useEffect(() => {
+    setVotes(voteCount);
+  }, [voteCount]);
+
+  useEffect(() => {
+    const id = getOrCreateFanId();
     setUserId(id);
 
-    // Check if user has already voted
-    const checkVoteStatus = async () => {
-      if (!id) return;
-      
-      const { data } = await supabase
-        .from("chant_votes")
-        .select("id")
-        .eq("chant_pack_id", chantPackId)
-        .eq("user_id", id)
-        .limit(1);
+    if (!voteMarkerKey) {
+      setHasVoted(false);
+      return;
+    }
 
-      setHasVoted((data?.length ?? 0) > 0);
-    };
+    setHasVoted(localStorage.getItem(voteMarkerKey) === "1");
+  }, [voteMarkerKey]);
 
-    checkVoteStatus();
-  }, [chantPackId]);
+  useEffect(() => {
+    if (hasVotedOverride) {
+      setHasVoted(true);
+    }
+  }, [hasVotedOverride]);
+
+  const markVotedLocally = () => {
+    if (voteMarkerKey) {
+      localStorage.setItem(voteMarkerKey, "1");
+    }
+    setHasVoted(true);
+  };
 
   const handleVote = async () => {
-    if (!userId || hasVoted || isLoading) return;
+    if (!userId || !targetKey || hasVoted || isLoading) {
+      return;
+    }
 
     setIsLoading(true);
-    try {
-      const { error } = await supabase.from("chant_votes").insert([
-        {
-          chant_pack_id: chantPackId,
-          user_id: userId,
-        },
-      ]);
+    setMessage(null);
+    setMessageIsError(false);
 
-      if (!error) {
-        setHasVoted(true);
-        const newCount = votes + 1;
-        setVotes(newCount);
-        onVoteChange?.(newCount, true);
+    try {
+      const response = await fetch("/api/votes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          chant_row_id: chantRowId || undefined,
+          chant_pack_id: chantPackId || undefined,
+          match_id: matchId || undefined,
+          battle_slug: battleSlug || undefined,
+          user_identifier: userId,
+        }),
+      });
+
+      const result = (await response
+        .json()
+        .catch(() => ({ success: false, message: "Invalid vote response." }))) as VoteApiResponse;
+
+      if (!response.ok || !result.success) {
+        const failureMessage = result.message || "Could not record vote.";
+        setMessage(failureMessage);
+        setMessageIsError(true);
+
+        if (response.status === 409) {
+          markVotedLocally();
+          onVoteChange?.(votes, true);
+        }
+
+        return;
       }
+
+      const nextVoteCount =
+        typeof result.vote_count === "number" ? result.vote_count : votes + 1;
+
+      markVotedLocally();
+      setVotes(nextVoteCount);
+      onVoteChange?.(nextVoteCount, true);
+      setMessage(result.message || "Vote recorded.");
     } catch (err) {
-      console.error("Error voting:", err);
+      console.error("VoteButton: vote request failed", {
+        targetKey,
+        chantRowId,
+        chantPackId,
+        battleSlug,
+        matchId,
+        error: err,
+      });
+      setMessage("Could not record vote.");
+      setMessageIsError(true);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <button
-      onClick={handleVote}
-      disabled={hasVoted || isLoading}
-      className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-        hasVoted
-          ? "bg-emerald-500/20 text-emerald-400 cursor-not-allowed"
-          : "bg-emerald-600 hover:bg-emerald-700 text-white"
-      }`}
-    >
-      <span className="text-lg">{hasVoted ? "✓" : "👍"}</span>
-      <span>{votes.toLocaleString()}</span>
-    </button>
+    <div className="space-y-1">
+      <button
+        onClick={handleVote}
+        disabled={hasVoted || isLoading || !targetKey}
+        className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+          hasVoted
+            ? "cursor-not-allowed bg-emerald-500/20 text-emerald-400"
+            : "bg-emerald-600 text-white hover:bg-emerald-700"
+        }`}
+      >
+        <span className="text-lg">{hasVoted ? "✓" : "👍"}</span>
+        <span>{votes.toLocaleString()}</span>
+      </button>
+
+      {message && (
+        <p className={`text-xs ${messageIsError ? "text-red-300" : "text-emerald-300"}`}>
+          {message}
+        </p>
+      )}
+    </div>
   );
 }
