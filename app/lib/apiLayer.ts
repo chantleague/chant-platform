@@ -1,4 +1,5 @@
 import { CANONICAL_CLUB_REGISTRY, League } from "@/app/lib/canonicalClubRegistry";
+import { toRenderableChantText } from "@/app/lib/chantContent";
 import { mockBattles } from "@/app/lib/mockBattles";
 import { supabase } from "@/app/lib/supabase";
 import { supabaseServer } from "@/app/lib/supabaseServer";
@@ -428,15 +429,21 @@ export async function getChantsForBattleSlug(
       }
     }
 
-    const chants: ApiChant[] = (packsData as RawRow[]).map((pack) => {
+    const chants: ApiChant[] = (packsData as RawRow[]).reduce<ApiChant[]>((accumulator, pack) => {
       const packId = String(pack.id || "");
       const chantMeta = chantMetaByPackId[packId];
       const chantRowId = chantMeta?.chantRowId || null;
-      const chantText =
-        lyricsByPackId[packId] ||
-        String(pack.description || pack.title || "").trim();
+      const chantText = toRenderableChantText(
+        lyricsByPackId[packId],
+        String(pack.description || "").trim(),
+        String(pack.title || "").trim(),
+      );
 
-      return {
+      if (!chantText) {
+        return accumulator;
+      }
+
+      accumulator.push({
         chant_id: packId,
         chant_row_id: chantRowId,
         match_id: chantMeta?.matchId || battleId,
@@ -447,8 +454,10 @@ export async function getChantsForBattleSlug(
             : voteCountByPackId[packId]) || 0,
         audio_url: pack.audio_url ? String(pack.audio_url) : null,
         created_at: pack.created_at ? String(pack.created_at) : null,
-      };
-    });
+      });
+
+      return accumulator;
+    }, []);
 
     return { battle_slug: battleSlug, chants };
   } catch (error) {

@@ -1,7 +1,5 @@
 import { notFound } from "next/navigation";
 import { supabase } from "@/app/lib/supabase";
-import { mockBattles } from "@/app/lib/mockBattles";
-import { mockClubs } from "@/app/lib/mockClubs";
 import type { Battle, Club } from "@/app/lib/types";
 import JoinBattleButton from "@/app/components/JoinBattleButton";
 import OfficialChantPacks from "@/app/components/OfficialChantPacks";
@@ -42,20 +40,7 @@ export default async function Page({
 	}
 
 	if (!battle) {
-		const mockBattle = mockBattles.find(
-			(candidate) => (candidate.slug ?? "").toLowerCase() === slug,
-		);
-
-		if (!mockBattle) {
-			return notFound();
-		}
-
-		battle = {
-			...mockBattle,
-			id: "",
-			home_team: (mockBattle.slug || "").split("-vs-")[0],
-			away_team: (mockBattle.slug || "").split("-vs-")[1],
-		} as unknown as Battle;
+		return notFound();
 	}
 
 	try {
@@ -71,11 +56,9 @@ export default async function Page({
 			if (homeErr) {
 				console.error("Error fetching home club", homeErr);
 			}
-			homeClub = mockClubs.find((club) => club.slug === battle.home_team) as Club | null;
 		}
 	} catch (e) {
 		console.error("Error fetching home club", e);
-		homeClub = mockClubs.find((club) => club.slug === battle.home_team) as Club | null;
 	}
 
 	try {
@@ -91,11 +74,9 @@ export default async function Page({
 			if (awayErr) {
 				console.error("Error fetching away club", awayErr);
 			}
-			awayClub = mockClubs.find((club) => club.slug === battle.away_team) as Club | null;
 		}
 	} catch (e) {
 		console.error("Error fetching away club", e);
-		awayClub = mockClubs.find((club) => club.slug === battle.away_team) as Club | null;
 	}
 
 	try {
@@ -195,7 +176,7 @@ export default async function Page({
 				</div>
 			</section>
 
-			<section className="grid gap-4 text-xs text-zinc-300 sm:grid-cols-4">
+			<section className="grid gap-4 text-xs text-zinc-300 sm:grid-cols-3">
 				<div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
 					<p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
 						Chants Submitted
@@ -209,16 +190,7 @@ export default async function Page({
 						Total Voters
 					</p>
 					<p className="mt-1 text-2xl font-semibold text-sky-400">
-						{(battle.stats?.voters || 0).toLocaleString()}
-					</p>
-				</div>
-				<div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
-					<p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-						Peak Volume
-					</p>
-					<p className="mt-1 text-2xl font-semibold text-zinc-50">
-						{battle.stats?.peakDb || 0}
-						<span className="ml-1 text-xs text-zinc-500">dB</span>
+						{(homeVotes + awayVotes).toLocaleString()}
 					</p>
 				</div>
 				<JoinBattleButton targetId="submit-chant-section" />

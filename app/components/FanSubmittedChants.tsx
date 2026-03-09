@@ -1,6 +1,7 @@
 import { supabase } from "@/app/lib/supabase";
 import type { FanChant } from "@/app/lib/types";
 import { getChantsForBattleSlug } from "@/app/lib/apiLayer";
+import { toRenderableChantText } from "@/app/lib/chantContent";
 import FanSubmittedChantsClient from "@/app/components/FanSubmittedChantsClient";
 
 interface FanSubmittedChantsProps {
@@ -31,6 +32,26 @@ function normalizeChant(chant: FanChant): FanChant {
     club_id: chant.club_id ?? null,
     chant_text: chant.chant_text ?? chant.lyrics,
     audio_url: chant.audio_url ?? null,
+  };
+}
+
+function normalizeAndFilterChant(chant: FanChant): FanChant | null {
+  const normalized = normalizeChant(chant);
+  const chantText = toRenderableChantText(
+    normalized.chant_text,
+    normalized.lyrics,
+    normalized.title,
+  );
+
+  if (!chantText) {
+    return null;
+  }
+
+  return {
+    ...normalized,
+    title: normalized.title || "Fan Chant",
+    chant_text: chantText,
+    lyrics: chantText,
   };
 }
 
@@ -102,34 +123,36 @@ export default async function FanSubmittedChants({ battleSlug }: FanSubmittedCha
       created_at: string | null;
     }>,
   ): FanChant[] => {
-    return apiChants.map((chant, index) => {
-      const chantPackId = String(chant.chant_id || "").trim();
-      const chantRowId = String(chant.chant_row_id || "").trim();
-      const chantText = String(chant.chant_text || "").trim();
-      const matchId = String(chant.match_id || resolvedMatchId).trim() || resolvedMatchId;
+    return apiChants
+      .map((chant, index) => {
+        const chantPackId = String(chant.chant_id || "").trim();
+        const chantRowId = String(chant.chant_row_id || "").trim();
+        const chantText = String(chant.chant_text || "").trim();
+        const matchId = String(chant.match_id || resolvedMatchId).trim() || resolvedMatchId;
 
-      if (chantPackId) {
-        precomputedVoteCountByPackId[chantPackId] = Number(chant.votes || 0);
-      }
+        if (chantPackId) {
+          precomputedVoteCountByPackId[chantPackId] = Number(chant.votes || 0);
+        }
 
-      if (chantRowId) {
-        precomputedVoteCountByChantId[chantRowId] = Number(chant.votes || 0);
-      }
+        if (chantRowId) {
+          precomputedVoteCountByChantId[chantRowId] = Number(chant.votes || 0);
+        }
 
-      return normalizeChant({
-        id: chantRowId || `${chantPackId || "chant"}-${index}`,
-        match_id: matchId,
-        battle_id: matchId,
-        chant_pack_id: chantPackId || null,
-        club_id: null,
-        title: "Fan Chant",
-        chant_text: chantText,
-        lyrics: chantText,
-        audio_url: chant.audio_url || null,
-        submitted_by: "fan",
-        created_at: chant.created_at || "",
-      } as FanChant);
-    });
+        return normalizeAndFilterChant({
+          id: chantRowId || `${chantPackId || "chant"}-${index}`,
+          match_id: matchId,
+          battle_id: matchId,
+          chant_pack_id: chantPackId || null,
+          club_id: null,
+          title: "Fan Chant",
+          chant_text: chantText,
+          lyrics: chantText,
+          audio_url: chant.audio_url || null,
+          submitted_by: "fan",
+          created_at: chant.created_at || "",
+        } as FanChant);
+      })
+      .filter((chant): chant is FanChant => Boolean(chant));
   };
 
   const byMatchId = await supabase
@@ -164,7 +187,7 @@ export default async function FanSubmittedChants({ battleSlug }: FanSubmittedCha
 
           const chantText = String(row.chant_text || "").trim();
 
-          return normalizeChant({
+          return normalizeAndFilterChant({
             id,
             match_id: String(row.match_id || resolvedMatchId),
             chant_pack_id: null,
@@ -209,7 +232,7 @@ export default async function FanSubmittedChants({ battleSlug }: FanSubmittedCha
 
                 const lyrics = String(row.lyrics || "").trim();
 
-                return normalizeChant({
+                return normalizeAndFilterChant({
                   id: `${chantPackId}-${index}`,
                   match_id: resolvedMatchId,
                   battle_id: resolvedMatchId,
@@ -229,15 +252,17 @@ export default async function FanSubmittedChants({ battleSlug }: FanSubmittedCha
           fatalErrorMessage = legacyByBattleId.error.message || "Unknown fan chant query error";
         }
       } else {
-        chants = ((legacyByBattleId.data as FanChant[] | null) || []).map((chant) =>
-          normalizeChant(chant),
-        );
+        chants = ((legacyByBattleId.data as FanChant[] | null) || [])
+          .map((chant) => normalizeAndFilterChant(chant))
+          .filter((chant): chant is FanChant => Boolean(chant));
       }
     }
   } else if (byMatchId.error) {
     fatalErrorMessage = byMatchId.error.message || "Unknown fan chant query error";
   } else {
-    chants = ((byMatchId.data as FanChant[] | null) || []).map((chant) => normalizeChant(chant));
+    chants = ((byMatchId.data as FanChant[] | null) || [])
+      .map((chant) => normalizeAndFilterChant(chant))
+      .filter((chant): chant is FanChant => Boolean(chant));
   }
 
   if (fatalErrorMessage) {

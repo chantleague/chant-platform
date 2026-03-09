@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/app/lib/supabase";
+import { CHANT_AUDIO_BUCKET, toChantAudioStorageErrorMessage } from "@/app/lib/storage";
 
 export default function ChantPackUploadForm({ battleId }: { battleId: string }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -39,15 +40,15 @@ export default function ChantPackUploadForm({ battleId }: { battleId: string }) 
       if (audioFile) {
         const fileName = `${Date.now()}-${audioFile.name}`;
         const { error: uploadError } = await supabase.storage
-          .from("chant-audio")
+          .from(CHANT_AUDIO_BUCKET)
           .upload(`${battleId}/${fileName}`, audioFile);
 
         if (uploadError) {
-          throw new Error(`Upload failed: ${uploadError.message}`);
+          throw new Error(toChantAudioStorageErrorMessage(uploadError.message || ""));
         }
 
         const { data: publicUrl } = supabase.storage
-          .from("chant-audio")
+          .from(CHANT_AUDIO_BUCKET)
           .getPublicUrl(`${battleId}/${fileName}`);
 
         audioUrl = publicUrl.publicUrl;

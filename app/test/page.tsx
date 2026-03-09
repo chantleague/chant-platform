@@ -1,11 +1,13 @@
-// Smoke test page for verifying Supabase connectivity and route existence
+import { notFound } from "next/navigation";
 import { supabase } from '@/app/lib/supabase';
 
 import type { Battle } from "../lib/types";
 
-// server component – performs the query during SSR so that `curl` and
-// automated tests can verify results without relying on client-side JS.
 export default async function TestPage() {
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
+
   let battles: Battle[] = [];
   let errorMessage: string | null = null;
 
@@ -24,7 +26,7 @@ export default async function TestPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-4xl font-bold text-white mb-8">Supabase Connection Test</h1>
+        <h1 className="text-4xl font-bold text-white mb-8">Supabase Connectivity Check</h1>
 
         {errorMessage ? (
           <div className="bg-red-900 rounded-lg p-6 border border-red-700">

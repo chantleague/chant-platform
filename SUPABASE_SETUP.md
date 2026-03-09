@@ -17,6 +17,7 @@ This document explains how to set up Supabase for the Chant Platform.
 3. Optional AI chant audio settings:
   - `SUNO_API_KEY`: API key used by the admin AI chant generator
   - `SUNO_API_URL`: Optional override for the Suno generation endpoint (defaults to `https://api.suno.ai/v1/generate`)
+  - `NEXT_PUBLIC_SUPABASE_AUDIO_BUCKET`: Optional storage bucket override (defaults to `chant-audio`)
 
 You can find these values in your Supabase project settings.
 
@@ -69,9 +70,10 @@ In Supabase SQL Editor, run the SQL from migration files in numeric order.
 
 1. Go to Storage in your Supabase dashboard
 2. Create a new bucket called `chant-audio`
+  - If you use a different bucket name, set `NEXT_PUBLIC_SUPABASE_AUDIO_BUCKET` to that exact value
 3. Set the following policies:
    - **Public Read**: Allow public access to files (for audio playback)
-   - **Authenticated Write**: Allow authenticated users to upload files
+  - **Fan Upload Write**: Allow `anon` and `authenticated` roles to upload audio
 
 ### Storage Policies (SQL)
 
@@ -81,14 +83,20 @@ CREATE POLICY "Public read access to chant-audio" ON storage.objects
   FOR SELECT
   USING (bucket_id = 'chant-audio');
 
--- Allow authenticated users to upload
-CREATE POLICY "Authenticated upload to chant-audio" ON storage.objects
+-- Allow fan uploads from anon/authenticated clients
+CREATE POLICY "Fan upload to chant-audio" ON storage.objects
   FOR INSERT
   WITH CHECK (
     bucket_id = 'chant-audio'
-    AND auth.role() = 'authenticated'
+    AND auth.role() IN ('anon', 'authenticated')
   );
 ```
+
+### Storage Troubleshooting
+
+- `Bucket not found`: Create the bucket in Supabase Storage and ensure code/env use the same name.
+- `permission denied` / RLS errors: Confirm the upload INSERT policy exists for `storage.objects` with `bucket_id = 'chant-audio'`.
+- Uploaded file but no playback: Confirm the bucket is public and the chant row has a non-null `audio_url`.
 
 ## Features Implemented
 

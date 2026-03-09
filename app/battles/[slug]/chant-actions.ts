@@ -494,34 +494,104 @@ export async function linkFanChantAudio(
   try {
     const { data: chantRow, error: chantFetchError } = await supabase
       .from("chants")
-      .select("id, submitted_by")
+      .select("id, submitted_by, chant_pack_id")
       .eq("id", chantId)
-      .single();
+      .maybeSingle();
 
-    if (chantFetchError || !chantRow?.id) {
+    if (chantFetchError) {
       console.error("linkFanChantAudio: chant lookup failed", chantFetchError);
       return { success: false, message: "Could not find the chant to attach audio." };
     }
 
-    if (String(chantRow.submitted_by || "") !== userId) {
+    let resolvedChantId = chantRow?.id ? String(chantRow.id) : "";
+    let resolvedPackId = chantRow?.chant_pack_id ? String(chantRow.chant_pack_id) : "";
+    let submitter = chantRow?.submitted_by ? String(chantRow.submitted_by) : "";
+
+    if (!resolvedChantId) {
+      const byPackLookup = await supabase
+        .from("chants")
+        .select("id, submitted_by, chant_pack_id")
+        .eq("chant_pack_id", chantId)
+        .maybeSingle();
+
+      if (byPackLookup.error) {
+        console.error("linkFanChantAudio: chant pack lookup failed", byPackLookup.error);
+        return { success: false, message: "Could not find the chant to attach audio." };
+      }
+
+      if (byPackLookup.data?.id) {
+        resolvedChantId = String(byPackLookup.data.id);
+        resolvedPackId = byPackLookup.data.chant_pack_id
+          ? String(byPackLookup.data.chant_pack_id)
+          : chantId;
+        submitter = byPackLookup.data.submitted_by
+          ? String(byPackLookup.data.submitted_by)
+          : submitter;
+      } else {
+        resolvedPackId = chantId;
+      }
+    }
+
+    if (submitter && submitter !== userId) {
       return { success: false, message: "Only the chant submitter can attach audio." };
     }
 
-    const { error: updateError } = await supabase
-      .from("chants")
-      .update({ audio_url: audioUrl })
-      .eq("id", chantId);
+    let linked = false;
+    let audioColumnMissing = false;
 
-    if (updateError) {
-      console.error("linkFanChantAudio: update failed", updateError);
-      if ((updateError.message || "").toLowerCase().includes("audio_url")) {
+    if (resolvedChantId) {
+      const { error: updateError } = await supabase
+        .from("chants")
+        .update({ audio_url: audioUrl })
+        .eq("id", resolvedChantId);
+
+      if (updateError) {
+        console.error("linkFanChantAudio: chant update failed", updateError);
+        if ((updateError.message || "").toLowerCase().includes("audio_url")) {
+          audioColumnMissing = true;
+        } else {
+          return { success: false, message: "Could not save the chant audio link." };
+        }
+      } else {
+        linked = true;
+      }
+    }
+
+    if (resolvedPackId) {
+      const packLookup = await supabase
+        .from("chant_packs")
+        .select("id")
+        .eq("id", resolvedPackId)
+        .maybeSingle();
+
+      if (packLookup.error) {
+        console.error("linkFanChantAudio: chant pack existence lookup failed", packLookup.error);
+      } else if (packLookup.data?.id) {
+        const { error: packUpdateError } = await supabase
+          .from("chant_packs")
+          .update({ audio_url: audioUrl })
+          .eq("id", resolvedPackId);
+
+        if (packUpdateError) {
+          console.error("linkFanChantAudio: chant pack update failed", packUpdateError);
+          if ((packUpdateError.message || "").toLowerCase().includes("audio_url")) {
+            audioColumnMissing = true;
+          }
+        } else {
+          linked = true;
+        }
+      }
+    }
+
+    if (!linked) {
+      if (audioColumnMissing) {
         return {
           success: false,
           message: "Audio column is unavailable. Run the latest DB migrations.",
         };
       }
 
-      return { success: false, message: "Could not save the chant audio link." };
+      return { success: false, message: "Could not find the chant to attach audio." };
     }
 
     revalidatePath(`/battles/${battleSlug}`);

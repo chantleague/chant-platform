@@ -138,7 +138,7 @@ export default function FanChantSubmissionForm({
 
       <div className="space-y-2">
         <label htmlFor="fan-chant-lyrics" className="block text-xs uppercase tracking-[0.14em] text-zinc-500">
-          {simpleMode ? "chant_text" : "Chant Lines"}
+          {simpleMode ? "Chant Text" : "Chant Lines"}
         </label>
         <textarea
           id="fan-chant-lyrics"
@@ -161,7 +161,18 @@ export default function FanChantSubmissionForm({
       </button>
 
       {latestChantId && fanId && (
-        <ChantAudioUpload chantId={latestChantId} battleSlug={battleSlug} userId={fanId} />
+        <ChantAudioUpload
+          chantId={latestChantId}
+          battleSlug={battleSlug}
+          userId={fanId}
+          onUploadComplete={() => {
+            setFeedback({
+              type: "success",
+              text: "Audio uploaded successfully and attached to your chant.",
+            });
+            router.refresh();
+          }}
+        />
       )}
     </form>
   );
