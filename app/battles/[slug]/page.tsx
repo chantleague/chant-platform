@@ -1,6 +1,14 @@
 import { notFound } from "next/navigation";
 import { supabase } from "@/app/lib/supabase";
 import { supabaseServer } from "@/app/lib/supabaseServer";
+import {
+	deriveBattleRouteSlug,
+	getBattleSlugLookupCandidates,
+	normalizeBattleSlug,
+	parseBattleSlugTeams,
+	stripBattleDateSuffix,
+} from "@/app/lib/battleRoutes";
+import { mockBattles } from "@/app/lib/mockBattles";
 import type { Battle, Club } from "@/app/lib/types";
 import JoinBattleButton from "@/app/components/JoinBattleButton";
 import OfficialChantPacks from "@/app/components/OfficialChantPacks";
@@ -163,6 +171,102 @@ async function resolveWinnerChantCandidate(matchId: string): Promise<WinnerChant
 	return sortedRows[0] || null;
 }
 
+async function resolveBattleBySlug(slug: string): Promise<Battle | null> {
+	const candidates = getBattleSlugLookupCandidates(slug);
+
+	for (const candidate of candidates) {
+		const exactMatch = await supabase
+			.from("matches")
+			.select("*")
+			.eq("slug", candidate)
+			.order("starts_at", { ascending: false })
+			.limit(1)
+			.maybeSingle();
+
+		if (exactMatch.error) {
+			console.error("battle page: exact slug lookup failed", {
+				slug: candidate,
+				error: exactMatch.error,
+			});
+		} else if (exactMatch.data) {
+			return exactMatch.data as Battle;
+		}
+	}
+
+	for (const candidate of candidates) {
+		const prefixResult = await supabase
+			.from("matches")
+			.select("*")
+			.ilike("slug", `${candidate}%`)
+			.order("starts_at", { ascending: false })
+			.limit(20);
+
+		if (prefixResult.error) {
+			console.error("battle page: prefix slug lookup failed", {
+				slug: candidate,
+				error: prefixResult.error,
+			});
+			continue;
+		}
+
+		const prefixRows = (prefixResult.data as Battle[] | null) || [];
+		const matchedPrefix = prefixRows.find((row) => {
+			const rowSlug = normalizeBattleSlug(row.slug);
+			const rowWithoutDate = stripBattleDateSuffix(rowSlug);
+			return candidates.includes(rowSlug) || candidates.includes(rowWithoutDate);
+		});
+
+		if (matchedPrefix) {
+			return matchedPrefix;
+		}
+	}
+
+	const teams = parseBattleSlugTeams(slug);
+	if (teams) {
+		const teamFallback = await supabase
+			.from("matches")
+			.select("*")
+			.eq("home_team", teams.homeTeam)
+			.eq("away_team", teams.awayTeam)
+			.order("starts_at", { ascending: false })
+			.limit(1)
+			.maybeSingle();
+
+		if (teamFallback.error) {
+			console.error("battle page: team fallback lookup failed", {
+				homeTeam: teams.homeTeam,
+				awayTeam: teams.awayTeam,
+				error: teamFallback.error,
+			});
+		} else if (teamFallback.data) {
+			return teamFallback.data as Battle;
+		}
+	}
+
+	const mockMatch = mockBattles.find((battle) => {
+		const mockSlug = normalizeBattleSlug(battle.slug);
+		const mockWithoutDate = stripBattleDateSuffix(mockSlug);
+		return candidates.includes(mockSlug) || candidates.includes(mockWithoutDate);
+	});
+
+	if (mockMatch) {
+		const teamsFromMock = parseBattleSlugTeams(mockMatch.slug);
+		return {
+			id: normalizeBattleSlug(mockMatch.slug),
+			slug: normalizeBattleSlug(mockMatch.slug),
+			title: mockMatch.title,
+			description: mockMatch.description,
+			home_team: teamsFromMock?.homeTeam,
+			away_team: teamsFromMock?.awayTeam,
+			status: "upcoming",
+			starts_at: null,
+			stats: mockMatch.stats,
+		} as Battle;
+	}
+
+	return null;
+}
+
 export default async function Page({
 	params,
 }: {
@@ -170,7 +274,7 @@ export default async function Page({
 }) {
 	const { slug: rawSlug } = await Promise.resolve(params);
 	const maybeSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
-	const slug = (maybeSlug ?? "").toString().trim().toLowerCase();
+	const slug = normalizeBattleSlug(maybeSlug);
 
 	let battle: Battle | null = null;
 	let homeClub: Club | null = null;
@@ -179,23 +283,23 @@ export default async function Page({
 	let awayVotes = 0;
 	let chantsSubmittedCount = 0;
 
-	try {
-		const { data, error } = await supabase
-			.from("matches")
-			.select("*")
-			.eq("slug", slug)
-			.single();
-
-		if (!error && data) {
-			battle = data as Battle;
+	if (slug) {
+		try {
+			battle = await resolveBattleBySlug(slug);
+		} catch (err) {
+			console.error("Battle query failed", err);
 		}
-	} catch (err) {
-		console.error("Battle query failed", err);
 	}
 
 	if (!battle) {
 		return notFound();
 	}
+
+	const routeSlug = deriveBattleRouteSlug({
+		slug: battle.slug,
+		homeTeam: battle.home_team,
+		awayTeam: battle.away_team,
+	}) || slug;
 
 	try {
 		const { data: homeClubData, error: homeErr } = await supabase
@@ -399,7 +503,7 @@ export default async function Page({
 					Battle Overview
 				</p>
 				<h1 className="text-xl font-semibold tracking-tight text-zinc-50">
-					{battle.title || slug.replace(/-/g, " ")}
+					{battle.title || routeSlug.replace(/-/g, " ")}
 				</h1>
 				{battle.description && <p className="max-w-2xl text-sm text-zinc-400">{battle.description}</p>}
 			</header>
@@ -432,7 +536,7 @@ export default async function Page({
 					</h2>
 					<BattleVoteButton
 						battleId={battle.id}
-						battleSlug={slug}
+						battleSlug={routeSlug}
 						clubSlug={battle.home_team || ""}
 						voteCount={homeVotes}
 						votingClosed={votingClosed}
@@ -444,7 +548,7 @@ export default async function Page({
 					</h2>
 					<BattleVoteButton
 						battleId={battle.id}
-						battleSlug={slug}
+						battleSlug={routeSlug}
 						clubSlug={battle.away_team || ""}
 						voteCount={awayVotes}
 						votingClosed={votingClosed}
@@ -483,13 +587,13 @@ export default async function Page({
 				</div>
 
 				<FanChantSubmissionForm
-					battleSlug={slug}
+					battleSlug={routeSlug}
 					submissionOpen={submissionWindowOpen}
 					kickoffTime={kickoffTime}
 					simpleMode
 				/>
 
-				<FanSubmittedChants battleSlug={slug} votingClosed={votingClosed} />
+				<FanSubmittedChants battleSlug={routeSlug} votingClosed={votingClosed} />
 			</section>
 
 			<OfficialChantPacks matchId={battle.id || slug} votingClosed={votingClosed} />

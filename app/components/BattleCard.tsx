@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { normalizeBattleSlug } from "@/app/lib/battleRoutes";
 
 export type BattleCardProps = {
   slug: string;
@@ -12,6 +13,7 @@ export type BattleCardProps = {
 
 export function BattleCard(props: BattleCardProps) {
   const { slug, title, subtitle, status, tag, metricLabel, metricValue } = props;
+  const safeSlug = normalizeBattleSlug(slug);
 
   const statusColor =
     status === "live"
@@ -22,7 +24,7 @@ export function BattleCard(props: BattleCardProps) {
 
   return (
     <Link
-      href={`/battles/${slug}`}
+      href={safeSlug ? `/battles/${encodeURIComponent(safeSlug)}` : "/battles"}
       className="group flex flex-col justify-between rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.8)] ring-1 ring-zinc-900/60 transition hover:-translate-y-0.5 hover:border-zinc-600 hover:bg-zinc-900/60"
     >
       <div className="flex items-start justify-between gap-3">

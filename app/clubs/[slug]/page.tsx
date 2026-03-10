@@ -3,6 +3,11 @@ import { supabase } from "@/app/lib/supabase";
 import { BattleCard } from "../../components/BattleCard";
 import { mockClubs } from "../../lib/mockClubs";
 import { buildBattleSlug } from "@/app/lib/fixtures";
+import {
+  buildBattleSlugFromTeams,
+  deriveBattleRouteSlug,
+  normalizeBattleSlug,
+} from "@/app/lib/battleRoutes";
 import type { Club, Battle, Fixture } from "@/app/lib/types";
 
 type ClubParams = { slug: string | string[] };
@@ -104,8 +109,22 @@ export default async function ClubPage({
         })
         .filter((battleSlug): battleSlug is string => Boolean(battleSlug));
 
-      const { data: fixtureBattles, error: fixtureBattleError } = fixtureSlugs.length
-        ? await supabase.from("matches").select("*").in("slug", fixtureSlugs)
+      const fixtureCanonicalSlugs = fixtures
+        .map((fixture) => {
+          const homeClub = clubsById[fixture.home_club_id];
+          const awayClub = clubsById[fixture.away_club_id];
+          if (!homeClub?.slug || !awayClub?.slug) {
+            return null;
+          }
+
+          return buildBattleSlugFromTeams(homeClub.slug, awayClub.slug);
+        })
+        .filter((battleSlug): battleSlug is string => Boolean(battleSlug));
+
+      const fixtureLookupSlugs = [...new Set([...fixtureSlugs, ...fixtureCanonicalSlugs])];
+
+      const { data: fixtureBattles, error: fixtureBattleError } = fixtureLookupSlugs.length
+        ? await supabase.from("matches").select("*").in("slug", fixtureLookupSlugs)
         : { data: [], error: null };
 
       if (fixtureBattleError) {
@@ -114,8 +133,9 @@ export default async function ClubPage({
 
       const battlesBySlug: Record<string, Battle> = {};
       (((fixtureBattles as Battle[] | null) || [])).forEach((battle) => {
-        if (battle.slug) {
-          battlesBySlug[battle.slug] = battle;
+        const normalizedBattleSlug = normalizeBattleSlug(battle.slug);
+        if (normalizedBattleSlug) {
+          battlesBySlug[normalizedBattleSlug] = battle;
         }
       });
 
@@ -129,15 +149,28 @@ export default async function ClubPage({
           }
 
           const battleSlug = buildBattleSlug(homeClub.slug, awayClub.slug, fixture.match_date);
-          if (!battleSlug) {
+          const canonicalBattleSlug = buildBattleSlugFromTeams(homeClub.slug, awayClub.slug);
+          if (!battleSlug && !canonicalBattleSlug) {
             return null;
           }
 
-          const existingBattle = battlesBySlug[battleSlug];
+          const existingBattle =
+            battlesBySlug[normalizeBattleSlug(battleSlug || "")] ||
+            battlesBySlug[normalizeBattleSlug(canonicalBattleSlug)];
+
+          const routeSlug = deriveBattleRouteSlug({
+            slug: existingBattle?.slug,
+            homeTeam: homeClub.slug,
+            awayTeam: awayClub.slug,
+          });
+
+          if (!routeSlug) {
+            return null;
+          }
 
           return {
             id: existingBattle?.id || fixture.id,
-            slug: battleSlug,
+            slug: routeSlug,
             title: existingBattle?.title || `${homeClub.name} vs ${awayClub.name}`,
             description: existingBattle?.description || `${fixture.league} fixture`,
             home_team: existingBattle?.home_team || homeClub.slug,

@@ -1,5 +1,6 @@
 import { BattleCard } from "../components/BattleCard";
 import { supabase } from "@/app/lib/supabase";
+import { deriveBattleRouteSlug } from "@/app/lib/battleRoutes";
 import type { Battle, Club } from "../lib/types";
 
 export default async function BattlesPage() {
@@ -35,7 +36,15 @@ export default async function BattlesPage() {
       ) : (
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {battles.map((battle: Battle) => {
-            const slugVal = battle.slug || "";
+            const slugVal = deriveBattleRouteSlug({
+              slug: battle.slug,
+              homeTeam: battle.home_team,
+              awayTeam: battle.away_team,
+            });
+            if (!slugVal) {
+              return null;
+            }
+
             // prefer club names from foreign-key ids or slug fields
             const homeClub =
               (battle.home_club_id && clubMap[battle.home_club_id]) ||
@@ -49,7 +58,7 @@ export default async function BattlesPage() {
 
             return (
               <BattleCard
-                key={slugVal}
+                key={battle.id || slugVal}
                 slug={slugVal}
                 title={clubDisplay}
                 subtitle={battle.description || ""}

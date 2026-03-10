@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { supabase } from "@/app/lib/supabase";
 import { mockBattles } from "@/app/lib/mockBattles";
+import { deriveBattleRouteSlug } from "@/app/lib/battleRoutes";
 
 type EventRow = {
   slug: string;
@@ -37,7 +38,7 @@ export default async function EventsPage() {
   try {
     const { data, error } = await supabase
       .from("matches")
-      .select("slug, title, description, starts_at, status")
+      .select("slug, title, description, starts_at, status, home_team, away_team")
       .order("starts_at", { ascending: true })
       .limit(30);
 
@@ -46,7 +47,11 @@ export default async function EventsPage() {
     } else {
       const normalized = (((data as Array<Record<string, unknown>> | null) || [])
         .map((row) => {
-          const slug = String(row.slug || "").trim();
+          const slug = deriveBattleRouteSlug({
+            slug: row.slug,
+            homeTeam: row.home_team,
+            awayTeam: row.away_team,
+          });
           if (!slug) {
             return null;
           }
@@ -88,7 +93,7 @@ export default async function EventsPage() {
           {events.map((event) => (
             <Link
               key={event.slug}
-              href={`/battles/${event.slug}`}
+              href={`/battles/${encodeURIComponent(event.slug)}`}
               className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4 transition hover:border-zinc-600 hover:bg-zinc-900/70"
             >
               <div className="flex items-center justify-between gap-2">
