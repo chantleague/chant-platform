@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VoteButton from "@/app/components/VoteButton";
 import { supabase } from "@/app/lib/supabase";
 import type { FanChant } from "@/app/lib/types";
@@ -89,7 +89,7 @@ export default function FanSubmittedChantsClient({
     return String(initialChants[0]?.match_id || "").trim();
   }, [initialChants, matchId]);
 
-  const triggerVotePulse = (chantId: string) => {
+  const triggerVotePulse = useCallback((chantId: string) => {
     const normalizedChantId = String(chantId || "").trim();
     if (!normalizedChantId) {
       return;
@@ -118,7 +118,60 @@ export default function FanSubmittedChantsClient({
 
       delete votePulseTimersRef.current[normalizedChantId];
     }, 700);
-  };
+  }, []);
+
+  const updateLocalChantState = useCallback((nextRow: RealtimeChantRow) => {
+    const chantId = String(nextRow.id || "").trim();
+    if (!chantId) {
+      return;
+    }
+
+    let didVoteCountChange = false;
+
+    setChants((previous) => {
+      const existingIndex = previous.findIndex(
+        (chant) => String(chant.id || "").trim() === chantId,
+      );
+
+      if (existingIndex === -1) {
+        return previous;
+      }
+
+      const existing = previous[existingIndex];
+      const nextVoteCount = toVoteCount(nextRow.vote_count, existing.voteCount);
+
+      if (existing.voteCount !== nextVoteCount) {
+        didVoteCountChange = true;
+      }
+
+      const nextChant: FanChantWithVotes = {
+        ...existing,
+        match_id: nextRow.match_id ? String(nextRow.match_id) : existing.match_id,
+        battle_id: nextRow.match_id ? String(nextRow.match_id) : existing.battle_id,
+        chant_pack_id: nextRow.chant_pack_id
+          ? String(nextRow.chant_pack_id)
+          : existing.chant_pack_id || null,
+        club_id: nextRow.club_id ? String(nextRow.club_id) : existing.club_id || null,
+        title: nextRow.title ? String(nextRow.title) : existing.title,
+        chant_text:
+          typeof nextRow.chant_text === "string" ? nextRow.chant_text : existing.chant_text,
+        lyrics: nextRow.lyrics ? String(nextRow.lyrics) : existing.lyrics,
+        audio_url: typeof nextRow.audio_url === "string" ? nextRow.audio_url : existing.audio_url,
+        submitted_by: nextRow.submitted_by ? String(nextRow.submitted_by) : existing.submitted_by,
+        created_at: nextRow.created_at ? String(nextRow.created_at) : existing.created_at,
+        vote_count: nextVoteCount,
+        voteCount: nextVoteCount,
+      };
+
+      const next = [...previous];
+      next[existingIndex] = nextChant;
+      return next;
+    });
+
+    if (didVoteCountChange) {
+      triggerVotePulse(chantId);
+    }
+  }, [triggerVotePulse]);
 
   useEffect(() => {
     return () => {
@@ -136,117 +189,18 @@ export default function FanSubmittedChantsClient({
     }
 
     const channel = supabase
-      .channel(`fan-chants-realtime-${normalizedMatchId}`)
+      .channel("chants-live")
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "UPDATE",
           schema: "public",
           table: "chants",
           filter: `match_id=eq.${normalizedMatchId}`,
         },
         (payload) => {
-          const nextRow = (payload.new || {}) as RealtimeChantRow;
-          const previousRow = (payload.old || {}) as RealtimeChantRow;
-          const chantId = String(nextRow.id || previousRow.id || "").trim();
-
-          if (!chantId) {
-            return;
-          }
-
-          if (payload.eventType === "DELETE") {
-            const activeTimer = votePulseTimersRef.current[chantId];
-            if (typeof activeTimer === "number") {
-              window.clearTimeout(activeTimer);
-              delete votePulseTimersRef.current[chantId];
-            }
-
-            setVotePulseByChantId((previous) => {
-              if (!previous[chantId]) {
-                return previous;
-              }
-
-              const next = { ...previous };
-              delete next[chantId];
-              return next;
-            });
-
-            setChants((previous) => previous.filter((chant) => String(chant.id || "") !== chantId));
-            return;
-          }
-
-          let didVoteCountChange = false;
-
-          setChants((previous) => {
-            const existingIndex = previous.findIndex(
-              (chant) => String(chant.id || "").trim() === chantId,
-            );
-
-            if (existingIndex === -1) {
-              const chantText = String(nextRow.chant_text || "").trim();
-              const lyrics = String(nextRow.lyrics || chantText || "Fan Chant").trim();
-              const insertedVoteCount = toVoteCount(nextRow.vote_count, 0);
-
-              if (insertedVoteCount > 0) {
-                didVoteCountChange = true;
-              }
-
-              const insertedChant: FanChantWithVotes = {
-                id: chantId,
-                match_id: String(nextRow.match_id || normalizedMatchId),
-                battle_id: String(nextRow.match_id || normalizedMatchId),
-                chant_pack_id: nextRow.chant_pack_id ? String(nextRow.chant_pack_id) : null,
-                club_id: nextRow.club_id ? String(nextRow.club_id) : null,
-                title: String(nextRow.title || "Fan Chant"),
-                chant_text: chantText || lyrics,
-                lyrics,
-                audio_url: nextRow.audio_url ? String(nextRow.audio_url) : null,
-                vote_count: insertedVoteCount,
-                voteCount: insertedVoteCount,
-                submitted_by: String(nextRow.submitted_by || "fan"),
-                created_at: String(nextRow.created_at || new Date().toISOString()),
-              };
-
-              return [insertedChant, ...previous];
-            }
-
-            const existing = previous[existingIndex];
-            const nextVoteCount = toVoteCount(nextRow.vote_count, existing.voteCount);
-
-            if (existing.voteCount !== nextVoteCount) {
-              didVoteCountChange = true;
-            }
-
-            const nextChant: FanChantWithVotes = {
-              ...existing,
-              match_id: nextRow.match_id ? String(nextRow.match_id) : existing.match_id,
-              battle_id: nextRow.match_id ? String(nextRow.match_id) : existing.battle_id,
-              chant_pack_id: nextRow.chant_pack_id
-                ? String(nextRow.chant_pack_id)
-                : existing.chant_pack_id || null,
-              club_id: nextRow.club_id ? String(nextRow.club_id) : existing.club_id || null,
-              title: nextRow.title ? String(nextRow.title) : existing.title,
-              chant_text:
-                typeof nextRow.chant_text === "string" ? nextRow.chant_text : existing.chant_text,
-              lyrics: nextRow.lyrics ? String(nextRow.lyrics) : existing.lyrics,
-              audio_url:
-                typeof nextRow.audio_url === "string" ? nextRow.audio_url : existing.audio_url,
-              submitted_by: nextRow.submitted_by
-                ? String(nextRow.submitted_by)
-                : existing.submitted_by,
-              created_at: nextRow.created_at ? String(nextRow.created_at) : existing.created_at,
-              vote_count: nextVoteCount,
-              voteCount: nextVoteCount,
-            };
-
-            const next = [...previous];
-            next[existingIndex] = nextChant;
-            return next;
-          });
-
-          if (didVoteCountChange) {
-            triggerVotePulse(chantId);
-          }
+          console.log("CHANT UPDATED", payload);
+          updateLocalChantState((payload.new || {}) as RealtimeChantRow);
         },
       )
       .subscribe((status) => {
@@ -261,7 +215,7 @@ export default function FanSubmittedChantsClient({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [normalizedMatchId]);
+  }, [normalizedMatchId, updateLocalChantState]);
 
   const topChants = useMemo(() => {
     return [...chants]
