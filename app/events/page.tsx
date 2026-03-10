@@ -2,6 +2,7 @@ import Link from "next/link";
 import { supabase } from "@/app/lib/supabase";
 import { mockBattles } from "@/app/lib/mockBattles";
 import { deriveBattleRouteSlug } from "@/app/lib/battleRoutes";
+import AdSlot from "@/components/AdSlot";
 
 type EventRow = {
   slug: string;
@@ -84,6 +85,8 @@ export default async function EventsPage() {
         </p>
       </header>
 
+      <AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_EVENTS_HEADER_SLOT} />
+
       {events.length === 0 ? (
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6 text-sm text-zinc-400">
           No upcoming events yet.
@@ -108,6 +111,8 @@ export default async function EventsPage() {
           ))}
         </div>
       )}
+
+      <AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_EVENTS_BOTTOM_SLOT} />
     </div>
   );
 }

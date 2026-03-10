@@ -16,6 +16,7 @@ import OfficialChantPacks from "@/app/components/OfficialChantPacks";
 import BattleVoteButton from "@/app/components/BattleVoteButton";
 import FanChantSubmissionForm from "@/app/components/FanChantSubmissionForm";
 import FanSubmittedChants from "@/app/components/FanSubmittedChants";
+import AdSlot from "@/components/AdSlot";
 
 type BattleParams = { slug: string | string[] };
 const SITE_URL = "https://chantleague.com";
@@ -600,6 +601,8 @@ export default async function Page({
 				{battle.description && <p className="max-w-2xl text-sm text-zinc-400">{battle.description}</p>}
 			</header>
 
+			<AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_BATTLE_HEADER_SLOT} />
+
 			{votingClosed && (
 				<section className="rounded-2xl border border-amber-700/50 bg-amber-950/20 p-4">
 					<p className="text-[11px] uppercase tracking-[0.2em] text-amber-300">🏆 Battle Winner</p>
@@ -686,6 +689,8 @@ export default async function Page({
 				/>
 
 				<FanSubmittedChants battleSlug={routeSlug} votingClosed={votingClosed} />
+
+				<AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_BATTLE_LEADERBOARD_SLOT} />
 			</section>
 
 			<OfficialChantPacks
@@ -693,6 +698,8 @@ export default async function Page({
 				battleSlug={routeSlug}
 				votingClosed={votingClosed}
 			/>
+
+			<AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_BATTLE_BOTTOM_SLOT} />
 		</div>
 	);
 }

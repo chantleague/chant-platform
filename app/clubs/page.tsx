@@ -1,4 +1,5 @@
 import { supabase } from "@/app/lib/supabase";
+import AdSlot from "@/components/AdSlot";
 import { mockClubs } from "../lib/mockClubs";
 import { ClubCard } from "../components/ClubCard";
 import type { Club } from "../lib/types";
@@ -50,8 +51,16 @@ export default async function ClubsPage() {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold text-zinc-50">Clubs</h1>
+    <div className="space-y-6 p-6">
+      <header className="space-y-2">
+        <h1 className="text-2xl font-bold text-zinc-50">Clubs</h1>
+        <p className="max-w-2xl text-sm text-zinc-400">
+          Explore club profiles, fan momentum, and active battle participation.
+        </p>
+      </header>
+
+      <AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_CLUBS_HEADER_SLOT} />
+
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {(clubs || []).map((club) => (
           <ClubCard
@@ -62,6 +71,8 @@ export default async function ClubsPage() {
           />
         ))}
       </div>
+
+      <AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_CLUBS_BOTTOM_SLOT} />
     </div>
   );
 }
