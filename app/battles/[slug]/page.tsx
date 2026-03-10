@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { supabase } from "@/app/lib/supabase";
 import { supabaseServer } from "@/app/lib/supabaseServer";
 import {
@@ -17,6 +18,7 @@ import FanChantSubmissionForm from "@/app/components/FanChantSubmissionForm";
 import FanSubmittedChants from "@/app/components/FanSubmittedChants";
 
 type BattleParams = { slug: string | string[] };
+const SITE_URL = "https://chantleague.com";
 
 interface WinnerChantCandidate {
 	id: string;
@@ -89,6 +91,96 @@ function hasKickoffPassed(kickoffTime?: string | null) {
 	}
 
 	return Date.now() >= kickoffTimestamp;
+}
+
+function toClubDisplayName(value?: string | null) {
+	const normalized = String(value || "").trim();
+	if (!normalized) {
+		return "";
+	}
+
+	return normalized
+		.replace(/_/g, "-")
+		.split(/[-\s]+/)
+		.filter(Boolean)
+		.map((part) => {
+			const lower = part.toLowerCase();
+			return lower.charAt(0).toUpperCase() + lower.slice(1);
+		})
+		.join(" ");
+}
+
+function resolveRivalryNames(slug: string, battle?: Battle | null) {
+	const parsedFromSlug = parseBattleSlugTeams(slug);
+	const homeName =
+		toClubDisplayName(battle?.home_team ? String(battle.home_team) : "") ||
+		toClubDisplayName(parsedFromSlug?.homeTeam || "") ||
+		"Home Club";
+	const awayName =
+		toClubDisplayName(battle?.away_team ? String(battle.away_team) : "") ||
+		toClubDisplayName(parsedFromSlug?.awayTeam || "") ||
+		"Away Club";
+
+	return { homeName, awayName };
+}
+
+export async function generateMetadata({
+	params,
+}: {
+	params: BattleParams | Promise<BattleParams>;
+}): Promise<Metadata> {
+	const { slug: rawSlug } = await Promise.resolve(params);
+	const maybeSlug = Array.isArray(rawSlug) ? rawSlug[0] : rawSlug;
+	const normalizedParamSlug = normalizeBattleSlug(maybeSlug);
+
+	let battle: Battle | null = null;
+	if (normalizedParamSlug) {
+		try {
+			battle = await resolveBattleBySlug(normalizedParamSlug);
+		} catch (error) {
+			console.error("battle metadata: failed to resolve battle", {
+				slug: normalizedParamSlug,
+				error,
+			});
+		}
+	}
+
+	const canonicalSlug = normalizedParamSlug || normalizeBattleSlug(battle?.slug);
+	const { homeName, awayName } = resolveRivalryNames(canonicalSlug, battle);
+
+	const title = `${homeName} vs ${awayName} Chant Battle | Chant League`;
+	const description = `Vote for the best fan chant in the ${homeName} vs ${awayName} rivalry battle. Fans compete for club pride on Chant League.`;
+	const canonicalUrl = `${SITE_URL}/battles/${encodeURIComponent(canonicalSlug || "battle")}`;
+	const ogImageUrl = `/api/og/battle/${encodeURIComponent(canonicalSlug || "battle")}`;
+
+	return {
+		title,
+		description,
+		alternates: {
+			canonical: canonicalUrl,
+		},
+		robots: {
+			index: true,
+			follow: true,
+		},
+		openGraph: {
+			title,
+			description,
+			url: canonicalUrl,
+			siteName: "Chant League",
+			images: [
+				{
+					url: ogImageUrl,
+				},
+			],
+		},
+		twitter: {
+			card: "summary_large_image",
+			title,
+			description,
+			images: [ogImageUrl],
+		},
+	};
 }
 
 async function resolveWinnerChantCandidate(matchId: string): Promise<WinnerChantCandidate | null> {
