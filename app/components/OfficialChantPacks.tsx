@@ -7,7 +7,15 @@ interface ChantPackWithVotes extends ChantPack {
   voteCount: number;
 }
 
-export default async function OfficialChantPacks({ matchId }: { matchId: string }) {
+interface OfficialChantPacksProps {
+  matchId: string;
+  votingClosed?: boolean;
+}
+
+export default async function OfficialChantPacks({
+  matchId,
+  votingClosed = false,
+}: OfficialChantPacksProps) {
   const { data: packs, error } = await supabase
     .from("chant_packs")
     .select("*")
@@ -110,7 +118,12 @@ export default async function OfficialChantPacks({ matchId }: { matchId: string 
               )}
               <div className="mt-4 flex items-center justify-between">
                 <p className="text-xs text-zinc-400">Votes</p>
-                <VoteButton chantPackId={pack.id} voteCount={pack.voteCount} />
+                <VoteButton
+                  chantPackId={pack.id}
+                  matchId={matchId}
+                  voteCount={pack.voteCount}
+                  votingClosed={votingClosed}
+                />
               </div>
             </div>
           );

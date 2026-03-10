@@ -171,7 +171,7 @@ export default function FanChantSubmissionForm({
 
       {kickoffReached && (
         <div className="rounded-lg border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200">
-          Submissions closed — voting continues.
+          Submissions closed — voting has ended.
         </div>
       )}
 

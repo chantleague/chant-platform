@@ -11,6 +11,7 @@ interface BattleVoteButtonProps {
   battleSlug: string;
   clubSlug: string;
   voteCount: number;
+  votingClosed?: boolean;
   onVoteChange?: (newCount: number, hasVoted: boolean) => void;
 }
 
@@ -19,6 +20,7 @@ export default function BattleVoteButton({
   battleSlug,
   clubSlug,
   voteCount,
+  votingClosed = false,
   onVoteChange,
 }: BattleVoteButtonProps) {
   const [votes, setVotes] = useState(voteCount);
@@ -26,6 +28,7 @@ export default function BattleVoteButton({
   const [isLoading, setIsLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageIsError, setMessageIsError] = useState(false);
 
   useEffect(() => {
     let id = localStorage.getItem("chant-user-id");
@@ -53,9 +56,11 @@ export default function BattleVoteButton({
   }, [battleId, clubSlug]);
 
   const handleVote = async () => {
-    if (!userId || hasVoted || isLoading) return;
+    if (!userId || hasVoted || isLoading || votingClosed) return;
 
     setIsLoading(true);
+    setMessage(null);
+    setMessageIsError(false);
     try {
       // call the server action, which will insert and revalidate the page
       const result = await voteMVP(battleId, clubSlug, userId, battleSlug);
@@ -64,33 +69,45 @@ export default function BattleVoteButton({
         const newCount = votes + 1;
         setVotes(newCount);
         onVoteChange?.(newCount, true);
+        setMessageIsError(false);
+      } else {
+        setMessageIsError(true);
       }
       if (result?.message) {
         setMessage(result.message);
       }
     } catch (err) {
       console.error("Error voting:", err);
+      setMessage("Could not record vote.");
+      setMessageIsError(true);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const resolvedMessage = message || (votingClosed && !hasVoted ? "Voting is closed for this battle." : null);
+  const resolvedMessageIsError = message ? messageIsError : Boolean(votingClosed && !hasVoted);
+
   return (
     <>
       <button
         onClick={handleVote}
-        disabled={hasVoted || isLoading}
+        disabled={hasVoted || isLoading || votingClosed}
         className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
           hasVoted
             ? "bg-emerald-500/20 text-emerald-400 cursor-not-allowed"
-            : "bg-emerald-600 hover:bg-emerald-700 text-white"
+            : votingClosed
+              ? "cursor-not-allowed bg-zinc-800 text-zinc-400"
+              : "bg-emerald-600 hover:bg-emerald-700 text-white"
         }`}
       >
-        <span className="text-lg">{hasVoted ? "✓" : "👍"}</span>
+        <span className="text-lg">{hasVoted ? "✓" : votingClosed ? "🔒" : "👍"}</span>
         <span>{votes.toLocaleString()}</span>
       </button>
-      {message && (
-        <p className="mt-1 text-xs text-emerald-300">{message}</p>
+      {resolvedMessage && (
+        <p className={`mt-1 text-xs ${resolvedMessageIsError ? "text-red-300" : "text-emerald-300"}`}>
+          {resolvedMessage}
+        </p>
       )}
     </>
   );

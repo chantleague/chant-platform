@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { supabase } from "@/app/lib/supabase";
+import { supabaseServer } from "@/app/lib/supabaseServer";
 import type { Battle, Club } from "@/app/lib/types";
 import JoinBattleButton from "@/app/components/JoinBattleButton";
 import OfficialChantPacks from "@/app/components/OfficialChantPacks";
@@ -8,6 +9,159 @@ import FanChantSubmissionForm from "@/app/components/FanChantSubmissionForm";
 import FanSubmittedChants from "@/app/components/FanSubmittedChants";
 
 type BattleParams = { slug: string | string[] };
+
+interface WinnerChantCandidate {
+	id: string;
+	chantText: string;
+	voteCount: number;
+	clubId: string | null;
+	createdAt: string | null;
+}
+
+function isMissingColumnError(errorMessage: string, columnName: string) {
+	if (!errorMessage) {
+		return false;
+	}
+
+	const escapedColumn = columnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(
+		`(column .*${escapedColumn}.* does not exist|Could not find the '${escapedColumn}' column)`,
+		"i",
+	).test(errorMessage);
+}
+
+function toVoteCount(value: unknown, fallback = 0) {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return value;
+	}
+
+	const parsed = Number.parseInt(String(value || ""), 10);
+	if (Number.isNaN(parsed)) {
+		return fallback;
+	}
+
+	return parsed;
+}
+
+function toTimestamp(value?: string | null) {
+	if (!value) {
+		return 0;
+	}
+
+	const timestamp = new Date(value).getTime();
+	return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function resolveKickoffTime(battle: Battle) {
+	const kickoffCandidate =
+		typeof battle.kickoff_time === "string" && battle.kickoff_time.trim()
+			? battle.kickoff_time.trim()
+			: null;
+
+	if (kickoffCandidate) {
+		return kickoffCandidate;
+	}
+
+	const startsAt = typeof battle.starts_at === "string" && battle.starts_at.trim()
+		? battle.starts_at.trim()
+		: null;
+
+	return startsAt;
+}
+
+function hasKickoffPassed(kickoffTime?: string | null) {
+	const normalizedKickoff = String(kickoffTime || "").trim();
+	if (!normalizedKickoff) {
+		return false;
+	}
+
+	const kickoffTimestamp = new Date(normalizedKickoff).getTime();
+	if (Number.isNaN(kickoffTimestamp)) {
+		return false;
+	}
+
+	return Date.now() >= kickoffTimestamp;
+}
+
+async function resolveWinnerChantCandidate(matchId: string): Promise<WinnerChantCandidate | null> {
+	const selectWithVotes = "id, chant_text, lyrics, vote_count, club_id, created_at";
+	const selectWithoutVotes = "id, chant_text, lyrics, club_id, created_at";
+	let includesVoteCount = true;
+
+	let matchColumn: "match_id" | "battle_id" = "match_id";
+	let queryResult = await supabaseServer
+		.from("chants")
+		.select(selectWithVotes)
+		.eq(matchColumn, matchId);
+
+	if (queryResult.error && isMissingColumnError(queryResult.error.message || "", "match_id")) {
+		matchColumn = "battle_id";
+		queryResult = await supabaseServer
+			.from("chants")
+			.select(selectWithVotes)
+			.eq(matchColumn, matchId);
+	}
+
+	if (queryResult.error && isMissingColumnError(queryResult.error.message || "", "vote_count")) {
+		includesVoteCount = false;
+		const fallbackRows = await supabaseServer
+			.from("chants")
+			.select(selectWithoutVotes)
+			.eq(matchColumn, matchId);
+
+		if (fallbackRows.error) {
+			console.error("battle page: failed to fetch winner chants", fallbackRows.error);
+			return null;
+		}
+
+		const rows = (fallbackRows.data as Array<Record<string, unknown>> | null) || [];
+		if (rows.length === 0) {
+			return null;
+		}
+
+		const sortedRows = rows
+			.map((row) => ({
+				id: String(row.id || "").trim(),
+				chantText: String(row.chant_text || row.lyrics || "").trim(),
+				voteCount: 0,
+				clubId: row.club_id ? String(row.club_id) : null,
+				createdAt: row.created_at ? String(row.created_at) : null,
+			}))
+			.filter((row) => Boolean(row.id) && Boolean(row.chantText))
+			.sort((left, right) => toTimestamp(right.createdAt) - toTimestamp(left.createdAt));
+
+		return sortedRows[0] || null;
+	}
+
+	if (queryResult.error) {
+		console.error("battle page: failed to resolve winner chant", queryResult.error);
+		return null;
+	}
+
+	const rows = (queryResult.data as Array<Record<string, unknown>> | null) || [];
+	if (rows.length === 0) {
+		return null;
+	}
+
+	const sortedRows = rows
+		.map((row) => ({
+			id: String(row.id || "").trim(),
+			chantText: String(row.chant_text || row.lyrics || "").trim(),
+			voteCount: includesVoteCount ? toVoteCount(row.vote_count, 0) : 0,
+			clubId: row.club_id ? String(row.club_id) : null,
+			createdAt: row.created_at ? String(row.created_at) : null,
+		}))
+		.filter((row) => Boolean(row.id) && Boolean(row.chantText))
+		.sort((left, right) => {
+			if (right.voteCount !== left.voteCount) {
+				return right.voteCount - left.voteCount;
+			}
+
+			return toTimestamp(right.createdAt) - toTimestamp(left.createdAt);
+		});
+
+	return sortedRows[0] || null;
+}
 
 export default async function Page({
 	params,
@@ -134,15 +288,109 @@ export default async function Page({
 	}
 
 	const battleId = battle.id || "";
-	const kickoffTimeCandidate =
-		typeof battle.kickoff_time === "string" && battle.kickoff_time.trim()
-			? battle.kickoff_time
-			: null;
-	const kickoffTime = kickoffTimeCandidate || battle.starts_at || null;
+	const kickoffTime = resolveKickoffTime(battle);
 	const normalizedStatus = (battle.status || "").toString().toLowerCase();
+	const votingClosed =
+		normalizedStatus === "completed" ||
+		normalizedStatus === "finished" ||
+		hasKickoffPassed(kickoffTime);
 	const submissionWindowOpen =
 		Boolean(battleId) &&
 		(normalizedStatus === "" || normalizedStatus === "upcoming");
+
+	let winnerChantText: string | null = null;
+	let winnerVoteCount = 0;
+	let winnerClubValue =
+		typeof battle.winning_club === "string" && battle.winning_club.trim()
+			? battle.winning_club.trim()
+			: "";
+	let winnerClubLabel = "";
+
+	if (votingClosed && battleId) {
+		const winner = await resolveWinnerChantCandidate(battleId);
+
+		if (winner) {
+			winnerChantText = winner.chantText;
+			winnerVoteCount = winner.voteCount;
+
+			let resolvedClubLabel = "";
+			if (winner.clubId && homeClub?.id && winner.clubId === String(homeClub.id)) {
+				winnerClubValue = battle.home_team || winnerClubValue;
+				resolvedClubLabel = homeClub?.name || battle.home_team || "";
+			} else if (winner.clubId && awayClub?.id && winner.clubId === String(awayClub.id)) {
+				winnerClubValue = battle.away_team || winnerClubValue;
+				resolvedClubLabel = awayClub?.name || battle.away_team || "";
+			} else if (winner.clubId) {
+				const clubLookup = await supabase
+					.from("clubs")
+					.select("id, slug, name")
+					.eq("id", winner.clubId)
+					.maybeSingle();
+
+				if (!clubLookup.error && clubLookup.data?.id) {
+					winnerClubValue = String(clubLookup.data.slug || clubLookup.data.id || winner.clubId);
+					resolvedClubLabel = String(clubLookup.data.name || winnerClubValue);
+				} else {
+					winnerClubValue = winner.clubId;
+				}
+			}
+
+			if (winnerClubValue === (battle.home_team || "")) {
+				winnerClubLabel = homeClub?.name || battle.home_team || winnerClubValue;
+			} else if (winnerClubValue === (battle.away_team || "")) {
+				winnerClubLabel = awayClub?.name || battle.away_team || winnerClubValue;
+			} else if (resolvedClubLabel) {
+				winnerClubLabel = resolvedClubLabel;
+			}
+
+			if (!winnerClubValue) {
+				winnerClubValue = "fan-submission";
+			}
+
+			if (!winnerClubLabel) {
+				winnerClubLabel =
+					winnerClubValue === "fan-submission"
+						? "Fan Submission"
+						: winnerClubValue.replace(/-/g, " ");
+			}
+
+			const battleRecord = battle as Record<string, unknown>;
+			const hasWinningChantColumn = Object.prototype.hasOwnProperty.call(
+				battleRecord,
+				"winning_chant_id",
+			);
+			const hasWinningClubColumn = Object.prototype.hasOwnProperty.call(
+				battleRecord,
+				"winning_club",
+			);
+
+			const existingWinningChantId =
+				typeof battleRecord.winning_chant_id === "string"
+					? battleRecord.winning_chant_id
+					: "";
+			const existingWinningClub =
+				typeof battleRecord.winning_club === "string" ? battleRecord.winning_club : "";
+
+			const updatePayload: Record<string, string> = {};
+			if (hasWinningChantColumn && existingWinningChantId !== winner.id) {
+				updatePayload.winning_chant_id = winner.id;
+			}
+			if (hasWinningClubColumn && existingWinningClub !== winnerClubValue) {
+				updatePayload.winning_club = winnerClubValue;
+			}
+
+			if (Object.keys(updatePayload).length > 0) {
+				const winnerUpdate = await supabaseServer
+					.from("matches")
+					.update(updatePayload)
+					.eq("id", battle.id);
+
+				if (winnerUpdate.error) {
+					console.error("battle page: failed to persist winner", winnerUpdate.error);
+				}
+			}
+		}
+	}
 
 	return (
 		<div className="space-y-6">
@@ -156,6 +404,27 @@ export default async function Page({
 				{battle.description && <p className="max-w-2xl text-sm text-zinc-400">{battle.description}</p>}
 			</header>
 
+			{votingClosed && (
+				<section className="rounded-2xl border border-amber-700/50 bg-amber-950/20 p-4">
+					<p className="text-[11px] uppercase tracking-[0.2em] text-amber-300">🏆 Battle Winner</p>
+					{winnerChantText ? (
+						<div className="mt-2 space-y-2">
+							<p className="text-sm text-zinc-300">
+								Club: <span className="font-semibold text-zinc-100">{winnerClubLabel}</span>
+							</p>
+							<p className="text-sm text-zinc-300">
+								Votes: <span className="font-semibold text-amber-200">{winnerVoteCount.toLocaleString()}</span>
+							</p>
+							<p className="rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 text-sm text-zinc-100 whitespace-pre-wrap">
+								{winnerChantText}
+							</p>
+						</div>
+					) : (
+						<p className="mt-2 text-sm text-zinc-300">No winning chant has been determined yet.</p>
+					)}
+				</section>
+			)}
+
 			<section className="grid grid-cols-2 gap-4">
 				<div className="text-center">
 					<h2 className="text-lg font-semibold text-zinc-50">
@@ -166,6 +435,7 @@ export default async function Page({
 						battleSlug={slug}
 						clubSlug={battle.home_team || ""}
 						voteCount={homeVotes}
+						votingClosed={votingClosed}
 					/>
 				</div>
 				<div className="text-center">
@@ -177,6 +447,7 @@ export default async function Page({
 						battleSlug={slug}
 						clubSlug={battle.away_team || ""}
 						voteCount={awayVotes}
+						votingClosed={votingClosed}
 					/>
 				</div>
 			</section>
@@ -218,10 +489,10 @@ export default async function Page({
 					simpleMode
 				/>
 
-				<FanSubmittedChants battleSlug={slug} />
+				<FanSubmittedChants battleSlug={slug} votingClosed={votingClosed} />
 			</section>
 
-			<OfficialChantPacks matchId={battle.id || slug} />
+			<OfficialChantPacks matchId={battle.id || slug} votingClosed={votingClosed} />
 		</div>
 	);
 }

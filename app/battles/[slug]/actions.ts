@@ -8,6 +8,25 @@ interface VoteResult {
   message: string;
 }
 
+function isVotingOpen(status?: string | null, kickoffTime?: string | null) {
+  const normalizedStatus = (status || "").toLowerCase();
+  if (normalizedStatus === "completed" || normalizedStatus === "finished") {
+    return false;
+  }
+
+  const kickoff = String(kickoffTime || "").trim();
+  if (!kickoff) {
+    return true;
+  }
+
+  const kickoffTimestamp = new Date(kickoff).getTime();
+  if (Number.isNaN(kickoffTimestamp)) {
+    return true;
+  }
+
+  return Date.now() < kickoffTimestamp;
+}
+
 // server action invoked from client components to cast an MVP vote
 export async function voteMVP(
   battleId: string,
@@ -20,6 +39,48 @@ export async function voteMVP(
   // quick sanity checks
   if (!battleId || !clubSlug || !userId) {
     return { success: false, message: "Missing vote information." };
+  }
+
+  // hard-stop voting once kickoff has passed
+  try {
+    let matchQuery = await supabase
+      .from("matches")
+      .select("id, status, starts_at, kickoff_time")
+      .eq("id", battleId)
+      .maybeSingle();
+
+    if (
+      matchQuery.error &&
+      /column .*kickoff_time.* does not exist/i.test(matchQuery.error.message || "")
+    ) {
+      matchQuery = await supabase
+        .from("matches")
+        .select("id, status, starts_at")
+        .eq("id", battleId)
+        .maybeSingle();
+    }
+
+    if (matchQuery.error) {
+      console.error("voteMVP: failed to validate battle window", matchQuery.error);
+      return { success: false, message: "Could not validate vote window." };
+    }
+
+    if (!matchQuery.data?.id) {
+      return { success: false, message: "Battle not found." };
+    }
+
+    const rawKickoff =
+      "kickoff_time" in matchQuery.data && typeof matchQuery.data.kickoff_time === "string"
+        ? matchQuery.data.kickoff_time
+        : null;
+    const kickoffTime = rawKickoff || (matchQuery.data.starts_at ? String(matchQuery.data.starts_at) : null);
+
+    if (!isVotingOpen(matchQuery.data.status ? String(matchQuery.data.status) : null, kickoffTime)) {
+      return { success: false, message: "Voting is closed for this battle." };
+    }
+  } catch (err) {
+    console.error("voteMVP: unexpected battle window validation error", err);
+    return { success: false, message: "Could not validate vote window." };
   }
 
   // restore stricter legacy rule: one vote per user per club per battle

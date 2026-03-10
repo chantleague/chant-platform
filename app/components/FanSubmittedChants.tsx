@@ -6,6 +6,7 @@ import FanSubmittedChantsClient from "@/app/components/FanSubmittedChantsClient"
 
 interface FanSubmittedChantsProps {
   battleSlug?: string;
+  votingClosed?: boolean;
 }
 
 interface FanChantWithVotes extends FanChant {
@@ -100,7 +101,10 @@ async function resolveMatchId(battleSlug?: string): Promise<string> {
   }
 }
 
-export default async function FanSubmittedChants({ battleSlug }: FanSubmittedChantsProps) {
+export default async function FanSubmittedChants({
+  battleSlug,
+  votingClosed = false,
+}: FanSubmittedChantsProps) {
   const resolvedMatchId = await resolveMatchId(battleSlug);
 
   if (!resolvedMatchId) {
@@ -354,6 +358,7 @@ export default async function FanSubmittedChants({ battleSlug }: FanSubmittedCha
         initialChants={[]}
         battleSlug={battleSlug}
         matchId={resolvedMatchId}
+        votingClosed={votingClosed}
       />
     );
   }
@@ -446,6 +451,7 @@ export default async function FanSubmittedChants({ battleSlug }: FanSubmittedCha
       initialChants={chantsWithVotes}
       battleSlug={battleSlug}
       matchId={resolvedMatchId}
+      votingClosed={votingClosed}
     />
   );
 }

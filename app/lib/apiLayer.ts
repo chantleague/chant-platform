@@ -101,6 +101,65 @@ function toSafeErrorLog(error: unknown) {
   };
 }
 
+function isVotingOpen(status?: string | null, kickoffTime?: string | null) {
+  const normalizedStatus = (status || "").toLowerCase();
+  if (normalizedStatus === "completed" || normalizedStatus === "finished") {
+    return false;
+  }
+
+  const kickoff = String(kickoffTime || "").trim();
+  if (!kickoff) {
+    return true;
+  }
+
+  const kickoffTimestamp = new Date(kickoff).getTime();
+  if (Number.isNaN(kickoffTimestamp)) {
+    return true;
+  }
+
+  return Date.now() < kickoffTimestamp;
+}
+
+async function getMatchVotingWindow(matchId: string): Promise<{ isOpen: boolean; errorMessage?: string }> {
+  let lookup = await supabaseServer
+    .from("matches")
+    .select("id, status, starts_at, kickoff_time")
+    .eq("id", matchId)
+    .maybeSingle();
+
+  if (lookup.error && isMissingColumnError(lookup.error.message || "", "kickoff_time")) {
+    lookup = await supabaseServer
+      .from("matches")
+      .select("id, status, starts_at")
+      .eq("id", matchId)
+      .maybeSingle();
+  }
+
+  if (lookup.error) {
+    return {
+      isOpen: false,
+      errorMessage: lookup.error.message || "Could not validate battle.",
+    };
+  }
+
+  if (!lookup.data?.id) {
+    return {
+      isOpen: false,
+      errorMessage: "Battle not found.",
+    };
+  }
+
+  const rawKickoff =
+    "kickoff_time" in lookup.data && typeof lookup.data.kickoff_time === "string"
+      ? lookup.data.kickoff_time
+      : null;
+  const kickoffTime = rawKickoff || (lookup.data.starts_at ? String(lookup.data.starts_at) : null);
+
+  return {
+    isOpen: isVotingOpen(lookup.data.status ? String(lookup.data.status) : null, kickoffTime),
+  };
+}
+
 function deriveShortName(name: string) {
   return name
     .replace(/\b(FC|CF|AFC|SC)\b/gi, "")
@@ -647,6 +706,30 @@ export async function submitChantVote(input: SubmitChantVoteInput): Promise<Subm
         status: 409,
         message: "Chant does not belong to this match.",
       };
+    }
+
+    if (resolvedMatchId) {
+      const votingWindow = await getMatchVotingWindow(resolvedMatchId);
+      if (votingWindow.errorMessage) {
+        console.error("api/votes: failed to validate vote window", {
+          resolvedMatchId,
+          error: votingWindow.errorMessage,
+        });
+
+        return {
+          success: false,
+          status: 500,
+          message: "Could not validate battle.",
+        };
+      }
+
+      if (!votingWindow.isOpen) {
+        return {
+          success: false,
+          status: 403,
+          message: "Voting is closed for this battle.",
+        };
+      }
     }
 
     const voteTargets: VoteTarget[] = [];

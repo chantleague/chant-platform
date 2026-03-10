@@ -14,6 +14,9 @@ export interface Battle {
   matchday?: number | null;
   status?: "upcoming" | "live" | "completed" | "finished";
   starts_at?: string | null;
+  kickoff_time?: string | null;
+  winning_chant_id?: string | null;
+  winning_club?: string | null;
   stats?: {
     chants?: number;
     voters?: number;

@@ -8,6 +8,8 @@ interface VoteButtonProps {
   matchId?: string;
   battleSlug?: string;
   voteCount: number;
+  votingClosed?: boolean;
+  votingClosedMessage?: string;
   hasVotedOverride?: boolean;
   onVoteChange?: (newCount: number, hasVoted: boolean) => void;
 }
@@ -48,6 +50,8 @@ export default function VoteButton({
   matchId,
   battleSlug,
   voteCount,
+  votingClosed = false,
+  votingClosedMessage,
   hasVotedOverride,
   onVoteChange,
 }: VoteButtonProps) {
@@ -93,6 +97,8 @@ export default function VoteButton({
     }
   }, [hasVotedOverride]);
 
+  const lockMessage = votingClosedMessage || "Voting is closed for this battle.";
+
   const markVotedLocally = () => {
     if (voteMarkerKey) {
       localStorage.setItem(voteMarkerKey, "1");
@@ -101,7 +107,7 @@ export default function VoteButton({
   };
 
   const handleVote = async () => {
-    if (!userId || !targetKey || hasVoted || isLoading) {
+    if (!userId || !targetKey || hasVoted || isLoading || votingClosed) {
       return;
     }
 
@@ -164,24 +170,29 @@ export default function VoteButton({
     }
   };
 
+  const resolvedMessage = message || (votingClosed && !hasVoted ? lockMessage : null);
+  const resolvedMessageIsError = message ? messageIsError : Boolean(votingClosed && !hasVoted);
+
   return (
     <div className="space-y-1">
       <button
         onClick={handleVote}
-        disabled={hasVoted || isLoading || !targetKey}
+        disabled={hasVoted || isLoading || !targetKey || votingClosed}
         className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
           hasVoted
             ? "cursor-not-allowed bg-emerald-500/20 text-emerald-400"
-            : "bg-emerald-600 text-white hover:bg-emerald-700"
+            : votingClosed
+              ? "cursor-not-allowed bg-zinc-800 text-zinc-400"
+              : "bg-emerald-600 text-white hover:bg-emerald-700"
         }`}
       >
-        <span className="text-lg">{hasVoted ? "✓" : "👍"}</span>
+        <span className="text-lg">{hasVoted ? "✓" : votingClosed ? "🔒" : "👍"}</span>
         <span>{votes.toLocaleString()}</span>
       </button>
 
-      {message && (
-        <p className={`text-xs ${messageIsError ? "text-red-300" : "text-emerald-300"}`}>
-          {message}
+      {resolvedMessage && (
+        <p className={`text-xs ${resolvedMessageIsError ? "text-red-300" : "text-emerald-300"}`}>
+          {resolvedMessage}
         </p>
       )}
     </div>

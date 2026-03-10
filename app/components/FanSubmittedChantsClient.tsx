@@ -27,6 +27,7 @@ interface FanSubmittedChantsClientProps {
   initialChants: FanChantWithVotes[];
   battleSlug?: string;
   matchId?: string;
+  votingClosed?: boolean;
 }
 
 function toTimestamp(value?: string | null) {
@@ -74,6 +75,7 @@ export default function FanSubmittedChantsClient({
   initialChants,
   battleSlug,
   matchId,
+  votingClosed = false,
 }: FanSubmittedChantsClientProps) {
   const [chants, setChants] = useState<FanChantWithVotes[]>(initialChants);
   const [votedByChantId, setVotedByChantId] = useState<Record<string, boolean>>({});
@@ -322,6 +324,7 @@ export default function FanSubmittedChantsClient({
               matchId={chant.match_id || undefined}
               battleSlug={battleSlug}
               voteCount={chant.voteCount}
+              votingClosed={votingClosed}
               hasVotedOverride={Boolean(votedByChantId[chant.id])}
               onVoteChange={(newCount, hasVoted) => {
                 handleVoteChange(chant.id, newCount, hasVoted);
@@ -335,6 +338,12 @@ export default function FanSubmittedChantsClient({
 
   return (
     <div className="space-y-6">
+      {votingClosed && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 text-sm text-zinc-300">
+          Voting is closed for this battle. The leaderboard remains visible below.
+        </div>
+      )}
+
       <section className="space-y-3">
         <h3 className="text-base font-semibold text-zinc-50">Top Chants</h3>
         {topChants.length > 0 ? (
