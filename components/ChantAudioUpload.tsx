@@ -335,8 +335,7 @@ export default function ChantAudioUpload({
 
     const timestamp = Date.now();
     const safeBattleSlug = sanitizePathSegment(battleSlug) || "battle";
-    const safeChantId = sanitizePathSegment(chantId) || `chant-${timestamp}`;
-    const filePath = `${safeBattleSlug}/${safeChantId}-${timestamp}.webm`;
+    const filePath = `${safeBattleSlug}/chant-${timestamp}.webm`;
 
     try {
       console.info("chant audio upload: starting", {
@@ -373,10 +372,15 @@ export default function ChantAudioUpload({
         return;
       }
 
-      const uploadedPath = uploadData?.path ? String(uploadData.path) : filePath;
-      const storagePathSource: UploadedAudioResult["storagePathSource"] = uploadData?.path
-        ? "supabase-response"
-        : "client-fallback";
+      const uploadedPath = filePath;
+      const storagePathSource: UploadedAudioResult["storagePathSource"] = "client-fallback";
+
+      if (uploadData?.path && String(uploadData.path) !== filePath) {
+        console.warn("chant audio upload: supabase returned unexpected path", {
+          expectedFilePath: filePath,
+          returnedFilePath: String(uploadData.path),
+        });
+      }
 
       console.info("chant audio upload: stored file path", {
         bucketName: CHANT_AUDIO_BUCKET,
@@ -386,14 +390,14 @@ export default function ChantAudioUpload({
 
       const { data: publicUrlData } = supabase.storage
         .from("chant-audio")
-        .getPublicUrl(uploadedPath);
+        .getPublicUrl(filePath);
 
       const audioUrl = publicUrlData.publicUrl;
 
       if (!audioUrl) {
         console.error("UPLOAD ERROR", {
           bucketName: CHANT_AUDIO_BUCKET,
-          filePath: uploadedPath,
+          filePath,
           error: "public URL generation failed",
         });
         setError(
@@ -407,7 +411,7 @@ export default function ChantAudioUpload({
         battleSlug,
         userId,
         audioUrl,
-        audioPath: uploadedPath,
+        audioPath: filePath,
         bucketName: CHANT_AUDIO_BUCKET,
       });
 
@@ -416,12 +420,12 @@ export default function ChantAudioUpload({
       if (!linkResult.success) {
         console.error("UPLOAD ERROR", {
           bucketName: CHANT_AUDIO_BUCKET,
-          filePath: uploadedPath,
+          filePath,
           publicUrl: audioUrl,
           error: linkResult.message,
         });
         try {
-          await supabase.storage.from("chant-audio").remove([uploadedPath]);
+          await supabase.storage.from("chant-audio").remove([filePath]);
         } catch (cleanupError) {
           console.error("chant audio cleanup failed", cleanupError);
         }
@@ -432,7 +436,7 @@ export default function ChantAudioUpload({
 
       const persistedAudioUrl = linkResult.storedAudioUrl || audioUrl;
       const persistedBucketName = linkResult.bucketName || CHANT_AUDIO_BUCKET;
-      const persistedPath = linkResult.storedAudioPath || uploadedPath;
+      const persistedPath = linkResult.storedAudioPath || filePath;
       const persistedColumns = Array.isArray(linkResult.storedColumns)
         ? linkResult.storedColumns
         : [];
