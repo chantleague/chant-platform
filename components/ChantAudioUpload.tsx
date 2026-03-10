@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { linkFanChantAudio } from "@/app/battles/[slug]/chant-actions";
 import { supabase } from "@/app/lib/supabase";
-import { CHANT_AUDIO_BUCKET, toChantAudioStorageErrorMessage } from "@/app/lib/storage";
+import { toChantAudioStorageErrorMessage } from "@/app/lib/storage";
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(["mp3", "wav", "m4a", "webm", "ogg"]);
+const CHANT_AUDIO_BUCKET = "chant-audio";
 
 type RecordingFormat = {
   mimeType: string;
@@ -128,6 +129,16 @@ interface ChantAudioUploadProps {
   onUploadComplete?: (audioUrl: string) => void;
 }
 
+type UploadedAudioResult = {
+  bucketName: string;
+  storagePath: string;
+  storagePathSource: "supabase-response" | "client-fallback";
+  publicUrl: string;
+  storedColumns: string[];
+  chantRowId: string | null;
+  chantPackId: string | null;
+};
+
 export default function ChantAudioUpload({
   chantId,
   battleSlug,
@@ -139,6 +150,7 @@ export default function ChantAudioUpload({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingFormat, setRecordingFormat] = useState<RecordingFormat | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploadedAudio, setUploadedAudio] = useState<UploadedAudioResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -147,6 +159,7 @@ export default function ChantAudioUpload({
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const playbackUrl = uploadedAudio?.publicUrl || previewUrl;
 
   useEffect(() => {
     setRecordingFormat(resolveRecordingFormat());
@@ -198,6 +211,7 @@ export default function ChantAudioUpload({
     const validationError = validateAudioFile(file);
     if (validationError) {
       setSelectedFile(null);
+      setUploadedAudio(null);
       setError(validationError);
       setMessage(null);
       event.target.value = "";
@@ -205,6 +219,7 @@ export default function ChantAudioUpload({
     }
 
     setSelectedFile(file);
+    setUploadedAudio(null);
     setError(null);
     setMessage(null);
   };
@@ -225,6 +240,7 @@ export default function ChantAudioUpload({
     }
 
     try {
+      setUploadedAudio(null);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       recordingStreamRef.current = stream;
       recordingChunksRef.current = [];
@@ -255,12 +271,14 @@ export default function ChantAudioUpload({
         const validationError = validateAudioFile(recordedFile);
         if (validationError) {
           setSelectedFile(null);
+          setUploadedAudio(null);
           setError(validationError);
           setMessage(null);
         } else {
           setSelectedFile(recordedFile);
+          setUploadedAudio(null);
           setError(null);
-          setMessage("Recording captured. Preview it below, then upload to attach it to your chant.");
+          setMessage("Recording captured. Local preview is shown above. Upload to attach it to your chant.");
         }
 
         recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -313,35 +331,74 @@ export default function ChantAudioUpload({
     setIsUploading(true);
     setError(null);
     setMessage(null);
+    setUploadedAudio(null);
 
     const timestamp = Date.now();
-    const extension = getFileExtension(selectedFile.name) || "mp3";
     const safeBattleSlug = sanitizePathSegment(battleSlug) || "battle";
     const safeChantId = sanitizePathSegment(chantId) || `chant-${timestamp}`;
-    const storagePath = `${safeBattleSlug}/${safeChantId}-${timestamp}.${extension}`;
+    const filePath = `${safeBattleSlug}/${safeChantId}-${timestamp}.webm`;
 
     try {
-      const { error: uploadError } = await supabase.storage
-        .from(CHANT_AUDIO_BUCKET)
-        .upload(storagePath, selectedFile, {
+      console.info("chant audio upload: starting", {
+        bucketName: CHANT_AUDIO_BUCKET,
+        filePath,
+        chantId,
+        battleSlug,
+      });
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("chant-audio")
+        .upload(filePath, selectedFile, {
           cacheControl: "3600",
           upsert: false,
           contentType: toUploadContentType(selectedFile),
         });
 
+      console.info("chant audio upload: response", {
+        bucketName: CHANT_AUDIO_BUCKET,
+        filePath,
+        uploadData,
+        uploadError: uploadError?.message || null,
+      });
+
       if (uploadError) {
-        setError(toChantAudioStorageErrorMessage(uploadError.message || ""));
+        console.error("UPLOAD ERROR", {
+          bucketName: CHANT_AUDIO_BUCKET,
+          filePath,
+          error: uploadError.message || "upload failed",
+        });
+        setError(
+          `${toChantAudioStorageErrorMessage(uploadError.message || "")} (bucket: ${CHANT_AUDIO_BUCKET}, path: ${filePath})`,
+        );
         return;
       }
 
+      const uploadedPath = uploadData?.path ? String(uploadData.path) : filePath;
+      const storagePathSource: UploadedAudioResult["storagePathSource"] = uploadData?.path
+        ? "supabase-response"
+        : "client-fallback";
+
+      console.info("chant audio upload: stored file path", {
+        bucketName: CHANT_AUDIO_BUCKET,
+        storedFilePath: uploadedPath,
+        storagePathSource,
+      });
+
       const { data: publicUrlData } = supabase.storage
-        .from(CHANT_AUDIO_BUCKET)
-        .getPublicUrl(storagePath);
+        .from("chant-audio")
+        .getPublicUrl(uploadedPath);
 
       const audioUrl = publicUrlData.publicUrl;
 
       if (!audioUrl) {
-        setError("Upload succeeded but audio URL could not be created.");
+        console.error("UPLOAD ERROR", {
+          bucketName: CHANT_AUDIO_BUCKET,
+          filePath: uploadedPath,
+          error: "public URL generation failed",
+        });
+        setError(
+          `Upload succeeded to ${CHANT_AUDIO_BUCKET}/${uploadedPath}, but public URL could not be created.`,
+        );
         return;
       }
 
@@ -350,11 +407,21 @@ export default function ChantAudioUpload({
         battleSlug,
         userId,
         audioUrl,
+        audioPath: uploadedPath,
+        bucketName: CHANT_AUDIO_BUCKET,
       });
 
+      console.info("chant audio upload: db link result", linkResult);
+
       if (!linkResult.success) {
+        console.error("UPLOAD ERROR", {
+          bucketName: CHANT_AUDIO_BUCKET,
+          filePath: uploadedPath,
+          publicUrl: audioUrl,
+          error: linkResult.message,
+        });
         try {
-          await supabase.storage.from(CHANT_AUDIO_BUCKET).remove([storagePath]);
+          await supabase.storage.from("chant-audio").remove([uploadedPath]);
         } catch (cleanupError) {
           console.error("chant audio cleanup failed", cleanupError);
         }
@@ -363,14 +430,40 @@ export default function ChantAudioUpload({
         return;
       }
 
+      const persistedAudioUrl = linkResult.storedAudioUrl || audioUrl;
+      const persistedBucketName = linkResult.bucketName || CHANT_AUDIO_BUCKET;
+      const persistedPath = linkResult.storedAudioPath || uploadedPath;
+      const persistedColumns = Array.isArray(linkResult.storedColumns)
+        ? linkResult.storedColumns
+        : [];
+
+      console.info("UPLOAD SUCCESS");
+      console.info("FILE PATH", `${persistedBucketName}/${persistedPath}`);
+      console.info("PUBLIC URL", persistedAudioUrl);
+
+      setUploadedAudio({
+        bucketName: persistedBucketName,
+        storagePath: persistedPath,
+        storagePathSource,
+        publicUrl: persistedAudioUrl,
+        storedColumns: persistedColumns,
+        chantRowId: linkResult.dbWriteResult?.chantRowId || null,
+        chantPackId: linkResult.dbWriteResult?.chantPackId || null,
+      });
+
+      setMessage("Uploaded to Supabase");
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-      setMessage("Audio uploaded and linked to your chant. Playback is now available on your chant card.");
-      onUploadComplete?.(audioUrl);
+      onUploadComplete?.(persistedAudioUrl);
     } catch (uploadError) {
       console.error("chant audio upload failed", uploadError);
+      console.error("UPLOAD ERROR", {
+        bucketName: CHANT_AUDIO_BUCKET,
+        filePath,
+        error: uploadError,
+      });
       setError("Could not upload audio right now.");
     } finally {
       setIsUploading(false);
@@ -402,10 +495,12 @@ export default function ChantAudioUpload({
         </p>
       )}
 
-      {previewUrl && (
+      {playbackUrl && (
         <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">Preview</p>
-          <audio controls preload="metadata" className="w-full" src={previewUrl}>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+            {uploadedAudio ? "Supabase Playback" : "Local preview"}
+          </p>
+          <audio controls preload="metadata" className="w-full" src={playbackUrl}>
             Your browser does not support the audio element.
           </audio>
         </div>
@@ -431,6 +526,39 @@ export default function ChantAudioUpload({
           {isUploading ? "Uploading..." : "Upload Audio"}
         </button>
       </div>
+
+      {uploadedAudio && (
+        <div className="space-y-2 rounded-lg border border-sky-800 bg-sky-950/30 p-3">
+          <p className="text-[11px] uppercase tracking-[0.16em] text-sky-300">
+            Uploaded to Supabase
+          </p>
+          <p className="text-xs text-sky-200 break-all">
+            Uploaded path ({uploadedAudio.storagePathSource === "supabase-response" ? "Supabase response" : "client fallback"}): {uploadedAudio.bucketName}/{uploadedAudio.storagePath}
+          </p>
+          <p className="text-xs text-sky-200 break-all">
+            Public URL:{" "}
+            <a
+              href={uploadedAudio.publicUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              {uploadedAudio.publicUrl}
+            </a>
+          </p>
+          {uploadedAudio.storedColumns.length > 0 && (
+            <p className="text-xs text-sky-200">
+              Stored in DB: {uploadedAudio.storedColumns.join(", ")}
+            </p>
+          )}
+          {uploadedAudio.chantRowId && (
+            <p className="text-xs text-sky-200 break-all">Chant row: {uploadedAudio.chantRowId}</p>
+          )}
+          {uploadedAudio.chantPackId && (
+            <p className="text-xs text-sky-200 break-all">Chant pack row: {uploadedAudio.chantPackId}</p>
+          )}
+        </div>
+      )}
 
       {isRecording && <p className="text-xs text-amber-300">Recording in progress...</p>}
 

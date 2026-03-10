@@ -32,11 +32,27 @@ interface LinkFanChantAudioInput {
   battleSlug: string;
   userId: string;
   audioUrl: string;
+  audioPath?: string;
+  bucketName?: string;
+}
+
+interface LinkFanChantAudioDbWriteResult {
+  chantRowUpdated: boolean;
+  chantRowId: string | null;
+  chantAudioUrl: string | null;
+  chantPackUpdated: boolean;
+  chantPackId: string | null;
+  chantPackAudioUrl: string | null;
 }
 
 interface LinkFanChantAudioResult {
   success: boolean;
   message: string;
+  bucketName?: string;
+  storedAudioPath?: string | null;
+  storedAudioUrl?: string;
+  storedColumns?: string[];
+  dbWriteResult?: LinkFanChantAudioDbWriteResult;
 }
 
 interface AdaptiveChantsInsertResult {
@@ -486,9 +502,28 @@ export async function linkFanChantAudio(
   const battleSlug = input.battleSlug?.trim();
   const userId = input.userId?.trim();
   const audioUrl = input.audioUrl?.trim();
+  const audioPath = input.audioPath?.trim() || "";
+  const requestedBucketName = input.bucketName?.trim();
+  const bucketName = requestedBucketName || "chant-audio";
 
   if (!chantId || !battleSlug || !userId || !audioUrl) {
     return { success: false, message: "Missing chant audio details." };
+  }
+
+  console.info("linkFanChantAudio: request", {
+    chantId,
+    battleSlug,
+    userId,
+    bucketName,
+    audioPath,
+    audioUrl,
+  });
+
+  if (requestedBucketName && requestedBucketName !== "chant-audio") {
+    console.warn("linkFanChantAudio: non-standard bucket requested", {
+      requestedBucketName,
+      expectedBucketName: "chant-audio",
+    });
   }
 
   try {
@@ -500,6 +535,14 @@ export async function linkFanChantAudio(
 
     if (chantFetchError) {
       console.error("linkFanChantAudio: chant lookup failed", chantFetchError);
+      console.error("UPLOAD ERROR", {
+        stage: "chant-lookup",
+        chantId,
+        battleSlug,
+        audioPath,
+        audioUrl,
+        error: chantFetchError.message || "chant lookup failed",
+      });
       return { success: false, message: "Could not find the chant to attach audio." };
     }
 
@@ -533,27 +576,58 @@ export async function linkFanChantAudio(
     }
 
     if (submitter && submitter !== userId) {
+      console.error("UPLOAD ERROR", {
+        stage: "submitter-validation",
+        chantId,
+        battleSlug,
+        audioPath,
+        audioUrl,
+        error: "only the chant submitter can attach audio",
+      });
       return { success: false, message: "Only the chant submitter can attach audio." };
     }
 
     let linked = false;
     let audioColumnMissing = false;
+    const storedColumns: string[] = [];
+    let updatedChantId: string | null = null;
+    let updatedChantAudioUrl: string | null = null;
+    let updatedPackId: string | null = null;
+    let updatedPackAudioUrl: string | null = null;
 
     if (resolvedChantId) {
-      const { error: updateError } = await supabase
+      const { data: chantUpdateRow, error: updateError } = await supabase
         .from("chants")
         .update({ audio_url: audioUrl })
-        .eq("id", resolvedChantId);
+        .eq("id", resolvedChantId)
+        .select("id, audio_url")
+        .maybeSingle();
 
       if (updateError) {
         console.error("linkFanChantAudio: chant update failed", updateError);
         if ((updateError.message || "").toLowerCase().includes("audio_url")) {
           audioColumnMissing = true;
         } else {
+          console.error("UPLOAD ERROR", {
+            stage: "chants-update",
+            chantId: resolvedChantId,
+            battleSlug,
+            audioPath,
+            audioUrl,
+            error: updateError.message || "chants update failed",
+          });
           return { success: false, message: "Could not save the chant audio link." };
         }
-      } else {
+      } else if (chantUpdateRow?.id) {
         linked = true;
+        storedColumns.push("chants.audio_url");
+        updatedChantId = String(chantUpdateRow.id);
+        updatedChantAudioUrl = chantUpdateRow.audio_url ? String(chantUpdateRow.audio_url) : null;
+      } else {
+        console.warn("linkFanChantAudio: chant update returned no row", {
+          resolvedChantId,
+          audioUrl,
+        });
       }
     }
 
@@ -567,40 +641,109 @@ export async function linkFanChantAudio(
       if (packLookup.error) {
         console.error("linkFanChantAudio: chant pack existence lookup failed", packLookup.error);
       } else if (packLookup.data?.id) {
-        const { error: packUpdateError } = await supabase
+        const { data: packUpdateRow, error: packUpdateError } = await supabase
           .from("chant_packs")
           .update({ audio_url: audioUrl })
-          .eq("id", resolvedPackId);
+          .eq("id", resolvedPackId)
+          .select("id, audio_url")
+          .maybeSingle();
 
         if (packUpdateError) {
           console.error("linkFanChantAudio: chant pack update failed", packUpdateError);
           if ((packUpdateError.message || "").toLowerCase().includes("audio_url")) {
             audioColumnMissing = true;
           }
-        } else {
+        } else if (packUpdateRow?.id) {
           linked = true;
+          storedColumns.push("chant_packs.audio_url");
+          updatedPackId = String(packUpdateRow.id);
+          updatedPackAudioUrl = packUpdateRow.audio_url ? String(packUpdateRow.audio_url) : null;
+        } else {
+          console.warn("linkFanChantAudio: chant pack update returned no row", {
+            resolvedPackId,
+            audioUrl,
+          });
         }
       }
     }
 
     if (!linked) {
       if (audioColumnMissing) {
+        console.error("UPLOAD ERROR", {
+          stage: "audio-column-missing",
+          chantId,
+          battleSlug,
+          audioPath,
+          audioUrl,
+          error: "audio column missing",
+        });
         return {
           success: false,
           message: "Audio column is unavailable. Run the latest DB migrations.",
         };
       }
 
+      console.error("UPLOAD ERROR", {
+        stage: "no-linked-row",
+        chantId,
+        battleSlug,
+        audioPath,
+        audioUrl,
+        error: "no chant row or chant pack row linked",
+      });
       return { success: false, message: "Could not find the chant to attach audio." };
     }
+
+    const dbWriteResult: LinkFanChantAudioDbWriteResult = {
+      chantRowUpdated: Boolean(updatedChantId),
+      chantRowId: updatedChantId,
+      chantAudioUrl: updatedChantAudioUrl,
+      chantPackUpdated: Boolean(updatedPackId),
+      chantPackId: updatedPackId,
+      chantPackAudioUrl: updatedPackAudioUrl,
+    };
+
+    console.info("linkFanChantAudio: db write result", {
+      bucketName,
+      storedAudioPath: audioPath,
+      storedAudioUrl: audioUrl,
+      storedColumns,
+      dbWriteResult,
+    });
+
+    console.info("UPLOAD SUCCESS");
+    console.info("FILE PATH", `${bucketName}/${audioPath || "unknown-path"}`);
+    console.info("PUBLIC URL", audioUrl);
 
     revalidatePath(`/battles/${battleSlug}`);
     revalidatePath(`/battle/${battleSlug}`);
     revalidatePath("/admin/chants");
 
-    return { success: true, message: "Fan chant audio linked successfully." };
+    return {
+      success: true,
+      message: "Fan chant audio linked successfully.",
+      bucketName,
+      storedAudioPath: audioPath || null,
+      storedAudioUrl: audioUrl,
+      storedColumns,
+      dbWriteResult,
+    };
   } catch (error) {
-    console.error("linkFanChantAudio: unexpected error", error);
+    console.error("linkFanChantAudio: unexpected error", {
+      chantId,
+      battleSlug,
+      bucketName,
+      audioPath,
+      error,
+    });
+    console.error("UPLOAD ERROR", {
+      stage: "unexpected",
+      chantId,
+      battleSlug,
+      audioPath,
+      audioUrl,
+      error,
+    });
     return { success: false, message: "Could not link chant audio right now." };
   }
 }

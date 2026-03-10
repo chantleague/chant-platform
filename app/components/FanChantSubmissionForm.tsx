@@ -165,10 +165,10 @@ export default function FanChantSubmissionForm({
           chantId={latestChantId}
           battleSlug={battleSlug}
           userId={fanId}
-          onUploadComplete={() => {
+          onUploadComplete={(audioUrl) => {
             setFeedback({
               type: "success",
-              text: "Audio uploaded successfully and attached to your chant.",
+              text: `Uploaded to Supabase: ${audioUrl}`,
             });
             router.refresh();
           }}
