@@ -359,20 +359,50 @@ export async function getChantsForBattleSlug(
     }
 
     const battleId = String(battleData.id);
+    let statusColumnAvailable = true;
+
+    let fanChantsData: RawRow[] | null = null;
+    let fanChantsError: { message?: string } | null = null;
 
     const fanChantsByMatch = await supabase
       .from("chants")
-      .select("id, match_id, chant_pack_id, lyrics")
-      .eq("match_id", battleId);
+      .select("id, match_id, battle_id, chant_pack_id, lyrics, status")
+      .eq("match_id", battleId)
+      .eq("status", "approved");
 
-    let fanChantsData = fanChantsByMatch.data as RawRow[] | null;
-    let fanChantsError = fanChantsByMatch.error;
+    fanChantsData = (fanChantsByMatch.data as RawRow[] | null) || [];
+    fanChantsError = fanChantsByMatch.error;
+
+    if (fanChantsError && isMissingColumnError(fanChantsError.message || "", "status")) {
+      statusColumnAvailable = false;
+      const fallbackByMatch = await supabase
+        .from("chants")
+        .select("id, match_id, battle_id, chant_pack_id, lyrics")
+        .eq("match_id", battleId);
+
+      fanChantsData = (fallbackByMatch.data as RawRow[] | null) || [];
+      fanChantsError = fallbackByMatch.error;
+    }
 
     if (fanChantsError && /column .*match_id.* does not exist/i.test(fanChantsError.message || "")) {
-      const legacyByBattleId = await supabase
-        .from("chants")
-        .select("id, battle_id, chant_pack_id, lyrics")
-        .eq("battle_id", battleId);
+      let legacyByBattleId = statusColumnAvailable
+        ? await supabase
+            .from("chants")
+            .select("id, battle_id, chant_pack_id, lyrics, status")
+            .eq("battle_id", battleId)
+            .eq("status", "approved")
+        : await supabase
+            .from("chants")
+            .select("id, battle_id, chant_pack_id, lyrics")
+            .eq("battle_id", battleId);
+
+      if (legacyByBattleId.error && isMissingColumnError(legacyByBattleId.error.message || "", "status")) {
+        statusColumnAvailable = false;
+        legacyByBattleId = await supabase
+          .from("chants")
+          .select("id, battle_id, chant_pack_id, lyrics")
+          .eq("battle_id", battleId);
+      }
 
       fanChantsData = legacyByBattleId.data as RawRow[] | null;
       fanChantsError = legacyByBattleId.error;
@@ -434,6 +464,12 @@ export async function getChantsForBattleSlug(
       }
     });
 
+    const approvedPackIds = new Set(
+      (((fanChantsData as RawRow[] | null) || [])
+        .map((chant) => String(chant.chant_pack_id || "").trim())
+        .filter((id) => Boolean(id))),
+    );
+
     const chantPackIds = (packsData as RawRow[])
       .map((pack) => String(pack.id || ""))
       .filter((id) => Boolean(id));
@@ -490,6 +526,10 @@ export async function getChantsForBattleSlug(
 
     const chants: ApiChant[] = (packsData as RawRow[]).reduce<ApiChant[]>((accumulator, pack) => {
       const packId = String(pack.id || "");
+      if (statusColumnAvailable && !approvedPackIds.has(packId)) {
+        return accumulator;
+      }
+
       const chantMeta = chantMetaByPackId[packId];
       const chantRowId = chantMeta?.chantRowId || null;
       const chantText = toRenderableChantText(

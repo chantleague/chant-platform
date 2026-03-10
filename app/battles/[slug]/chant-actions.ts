@@ -418,6 +418,7 @@ export async function submitFanChant(
       created_at: createdAt,
       submitted_at: createdAt,
       club_id: clubId || undefined,
+      status: "pending",
       official: false,
     };
 

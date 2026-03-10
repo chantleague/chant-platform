@@ -159,27 +159,57 @@ export default async function FanSubmittedChants({
       .filter((chant): chant is FanChant => Boolean(chant));
   };
 
+  let statusColumnAvailable = true;
+
+  let byMatchIdData: Array<Record<string, unknown>> | null = null;
+  let byMatchIdError: { message?: string } | null = null;
+
   const byMatchId = await supabase
     .from("chants")
     .select(
-      "id, match_id, chant_pack_id, club_id, title, chant_text, lyrics, audio_url, submitted_by, created_at, vote_count",
+      "id, match_id, chant_pack_id, club_id, title, chant_text, lyrics, audio_url, submitted_by, created_at, vote_count, status",
     )
     .eq("match_id", resolvedMatchId)
+    .eq("status", "approved")
     .order("created_at", { ascending: false });
 
-  const withAudioErrorMessage = byMatchId.error?.message || "";
+  byMatchIdData = (byMatchId.data as Array<Record<string, unknown>> | null) || [];
+  byMatchIdError = byMatchId.error;
+
+  if (byMatchIdError && isMissingColumnError(byMatchIdError.message || "", "status")) {
+    statusColumnAvailable = false;
+    const fallbackByMatchId = await supabase
+      .from("chants")
+      .select(
+        "id, match_id, chant_pack_id, club_id, title, chant_text, lyrics, audio_url, submitted_by, created_at, vote_count",
+      )
+      .eq("match_id", resolvedMatchId)
+      .order("created_at", { ascending: false });
+
+    byMatchIdData = (fallbackByMatchId.data as Array<Record<string, unknown>> | null) || [];
+    byMatchIdError = fallbackByMatchId.error;
+  }
+
+  const withAudioErrorMessage = byMatchIdError?.message || "";
   const hasSchemaDriftError =
-    Boolean(byMatchId.error) &&
-    /(column .* does not exist|audio_url|chant_text|club_id|title|submitted_by|created_at|match_id|vote_count)/i.test(
+    Boolean(byMatchIdError) &&
+      /(column .* does not exist|audio_url|chant_text|club_id|title|submitted_by|created_at|match_id|vote_count|status)/i.test(
       withAudioErrorMessage,
     );
 
   if (hasSchemaDriftError) {
-    const minimalByMatchId = await supabase
-      .from("chants")
-      .select("id, match_id, chant_text, vote_count, submitted_by, created_at")
-      .eq("match_id", resolvedMatchId)
-      .order("created_at", { ascending: false });
+    const minimalByMatchId = statusColumnAvailable
+      ? await supabase
+          .from("chants")
+          .select("id, match_id, chant_text, vote_count, submitted_by, created_at")
+          .eq("match_id", resolvedMatchId)
+          .eq("status", "approved")
+          .order("created_at", { ascending: false })
+      : await supabase
+          .from("chants")
+          .select("id, match_id, chant_text, vote_count, submitted_by, created_at")
+          .eq("match_id", resolvedMatchId)
+          .order("created_at", { ascending: false });
 
     if (!minimalByMatchId.error) {
       chants = (((minimalByMatchId.data as Array<Record<string, unknown>> | null) || [])
@@ -207,11 +237,18 @@ export default async function FanSubmittedChants({
         })
         .filter((chant): chant is FanChant => Boolean(chant)));
     } else {
-      const legacyByBattleId = await supabase
-        .from("chants")
-        .select("id, battle_id, chant_pack_id, title, chant_text, lyrics, submitted_by, created_at")
-        .eq("battle_id", resolvedMatchId)
-        .order("created_at", { ascending: false });
+      const legacyByBattleId = statusColumnAvailable
+        ? await supabase
+            .from("chants")
+            .select("id, battle_id, chant_pack_id, title, chant_text, lyrics, submitted_by, created_at")
+            .eq("battle_id", resolvedMatchId)
+            .eq("status", "approved")
+            .order("created_at", { ascending: false })
+        : await supabase
+            .from("chants")
+            .select("id, battle_id, chant_pack_id, title, chant_text, lyrics, submitted_by, created_at")
+            .eq("battle_id", resolvedMatchId)
+            .order("created_at", { ascending: false });
 
       if (legacyByBattleId.error) {
         const fallbackErrorMessage = legacyByBattleId.error.message || "";
@@ -219,10 +256,16 @@ export default async function FanSubmittedChants({
           /(column .* does not exist|title|submitted_by|created_at|id)/i.test(fallbackErrorMessage);
 
         if (needsMinimalLegacyFallback) {
-          const minimalLegacy = await supabase
-            .from("chants")
-            .select("chant_pack_id, lyrics")
-            .eq("battle_id", resolvedMatchId);
+          const minimalLegacy = statusColumnAvailable
+            ? await supabase
+                .from("chants")
+                .select("chant_pack_id, lyrics")
+                .eq("battle_id", resolvedMatchId)
+                .eq("status", "approved")
+            : await supabase
+                .from("chants")
+                .select("chant_pack_id, lyrics")
+                .eq("battle_id", resolvedMatchId);
 
           if (minimalLegacy.error) {
             fatalErrorMessage = minimalLegacy.error.message || "Unknown fan chant query error";
@@ -261,11 +304,11 @@ export default async function FanSubmittedChants({
           .filter((chant): chant is FanChant => Boolean(chant));
       }
     }
-  } else if (byMatchId.error) {
-    fatalErrorMessage = byMatchId.error.message || "Unknown fan chant query error";
+  } else if (byMatchIdError) {
+    fatalErrorMessage = byMatchIdError.message || "Unknown fan chant query error";
   } else {
-    chants = ((byMatchId.data as FanChant[] | null) || [])
-      .map((chant) => normalizeAndFilterChant(chant))
+    chants = ((byMatchIdData as Array<Record<string, unknown>> | null) || [])
+      .map((chant) => normalizeAndFilterChant(chant as unknown as FanChant))
       .filter((chant): chant is FanChant => Boolean(chant));
   }
 
