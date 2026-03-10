@@ -1,8 +1,8 @@
 import "./globals.css";
 import type { ReactNode } from "react";
 import { Analytics } from "@vercel/analytics/react";
+import MainHeader from "@/components/MainHeader";
 import { useBrand } from "./lib/getBrand";
-import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -15,7 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         style={{ backgroundColor: brand.secondary }}
       >
         <div className="flex min-h-screen flex-col">
-          <Navbar brand={brand} />
+          <MainHeader />
           <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col p-6">{children}</main>
           <Footer />
           <Analytics />
