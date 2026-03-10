@@ -123,47 +123,10 @@ function toUploadContentType(file: File) {
   return "audio/mpeg";
 }
 
-function splitStoragePath(filePath: string) {
+function toStorageFileName(filePath: string) {
   const normalized = String(filePath || "").trim().replace(/^\/+/, "");
-  const lastSlashIndex = normalized.lastIndexOf("/");
-
-  if (lastSlashIndex === -1) {
-    return {
-      folderPath: "",
-      fileName: normalized,
-    };
-  }
-
-  return {
-    folderPath: normalized.slice(0, lastSlashIndex),
-    fileName: normalized.slice(lastSlashIndex + 1),
-  };
-}
-
-async function verifyUploadedFileExists(filePath: string) {
-  const { folderPath, fileName } = splitStoragePath(filePath);
-  if (!fileName) {
-    return false;
-  }
-
-  const { data, error } = await supabase.storage.from("chant-audio").list(folderPath, {
-    limit: 100,
-    search: fileName,
-  });
-
-  if (error) {
-    console.error("chant audio upload: verify list failed", {
-      bucketName: CHANT_AUDIO_BUCKET,
-      filePath,
-      folderPath,
-      error: error.message || "list failed",
-    });
-    return false;
-  }
-
-  return Array.isArray(data)
-    ? data.some((entry) => String(entry?.name || "").trim() === fileName)
-    : false;
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : "";
 }
 
 interface ChantAudioUploadProps {
@@ -177,6 +140,7 @@ type UploadedAudioResult = {
   bucketName: string;
   storagePath: string;
   storagePathSource: "supabase-response" | "client-fallback";
+  storageVerified: boolean;
   publicUrl: string;
   storedColumns: string[];
   chantRowId: string | null;
@@ -432,25 +396,6 @@ export default function ChantAudioUpload({
         storagePathSource,
       });
 
-      const isStoredInSupabase = await verifyUploadedFileExists(uploadedPath);
-
-      if (!isStoredInSupabase) {
-        console.error("UPLOAD ERROR", {
-          bucketName: CHANT_AUDIO_BUCKET,
-          filePath: uploadedPath,
-          error: "uploaded file could not be verified in bucket",
-        });
-
-        try {
-          await supabase.storage.from("chant-audio").remove([uploadedPath]);
-        } catch (cleanupError) {
-          console.error("chant audio cleanup failed", cleanupError);
-        }
-
-        setError(FALLBACK_UPLOAD_ERROR);
-        return;
-      }
-
       const { data: publicUrlData } = supabase.storage
         .from("chant-audio")
         .getPublicUrl(filePath);
@@ -467,6 +412,39 @@ export default function ChantAudioUpload({
           `Upload succeeded to ${CHANT_AUDIO_BUCKET}/${uploadedPath}, but public URL could not be created.`,
         );
         return;
+      }
+
+      const expectedFileName = toStorageFileName(filePath);
+      const { data: files, error: filesError } = await supabase.storage
+        .from("chant-audio")
+        .list(safeBattleSlug);
+
+      let storageVerified = false;
+
+      if (filesError) {
+        console.error("chant audio upload: storage verification list failed", {
+          bucketName: CHANT_AUDIO_BUCKET,
+          folder: safeBattleSlug,
+          filePath,
+          error: filesError.message || "list failed",
+        });
+      } else {
+        storageVerified = Array.isArray(files)
+          ? files.some((file) => {
+              const listedName = String(file?.name || "").trim();
+              if (!listedName) {
+                return false;
+              }
+
+              return listedName === expectedFileName || `${safeBattleSlug}/${listedName}` === filePath;
+            })
+          : false;
+      }
+
+      if (storageVerified) {
+        console.log("SUPABASE STORAGE VERIFIED");
+      } else {
+        console.log("SUPABASE STORAGE FILE NOT FOUND");
       }
 
       const linkResult = await linkFanChantAudio({
@@ -512,6 +490,7 @@ export default function ChantAudioUpload({
         bucketName: persistedBucketName,
         storagePath: persistedPath,
         storagePathSource,
+        storageVerified,
         publicUrl: persistedAudioUrl,
         storedColumns: persistedColumns,
         chantRowId: linkResult.dbWriteResult?.chantRowId || null,
@@ -598,6 +577,9 @@ export default function ChantAudioUpload({
         <div className="space-y-2 rounded-lg border border-sky-800 bg-sky-950/30 p-3">
           <p className="text-[11px] uppercase tracking-[0.16em] text-sky-300">
             Uploaded to Supabase
+          </p>
+          <p className="text-xs text-sky-100">
+            {uploadedAudio.storageVerified ? "Storage verified ✓" : "Storage verification failed"}
           </p>
           <p className="text-xs text-sky-200 break-all">
             Uploaded path ({uploadedAudio.storagePathSource === "supabase-response" ? "Supabase response" : "client fallback"}): {uploadedAudio.bucketName}/{uploadedAudio.storagePath}
