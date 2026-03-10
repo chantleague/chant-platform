@@ -349,9 +349,12 @@ export default async function FanSubmittedChants({ battleSlug }: FanSubmittedCha
   }
 
   if (chants.length === 0) {
-    return renderEmptySections(
-      "No fan chants submitted yet. Be the first to drop one.",
-      "New fan chants will appear here.",
+    return (
+      <FanSubmittedChantsClient
+        initialChants={[]}
+        battleSlug={battleSlug}
+        matchId={resolvedMatchId}
+      />
     );
   }
 
@@ -438,5 +441,11 @@ export default async function FanSubmittedChants({ battleSlug }: FanSubmittedCha
     };
   });
 
-  return <FanSubmittedChantsClient initialChants={chantsWithVotes} battleSlug={battleSlug} />;
+  return (
+    <FanSubmittedChantsClient
+      initialChants={chantsWithVotes}
+      battleSlug={battleSlug}
+      matchId={resolvedMatchId}
+    />
+  );
 }
