@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { trackAnalyticsEvent } from "@/app/lib/analyticsClient";
 
 interface VoteButtonProps {
   chantPackId?: string;
@@ -152,6 +153,9 @@ export default function VoteButton({
 
       markVotedLocally();
       setVotes(nextVoteCount);
+      trackAnalyticsEvent("chant_vote", {
+        battle_slug: battleSlug || undefined,
+      });
       onVoteChange?.(nextVoteCount, true);
       setMessage(result.message || "Vote recorded.");
     } catch (err) {

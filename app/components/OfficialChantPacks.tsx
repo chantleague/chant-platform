@@ -9,11 +9,13 @@ interface ChantPackWithVotes extends ChantPack {
 
 interface OfficialChantPacksProps {
   matchId: string;
+  battleSlug?: string;
   votingClosed?: boolean;
 }
 
 export default async function OfficialChantPacks({
   matchId,
+  battleSlug,
   votingClosed = false,
 }: OfficialChantPacksProps) {
   const { data: packs, error } = await supabase
@@ -121,6 +123,7 @@ export default async function OfficialChantPacks({
                 <VoteButton
                   chantPackId={pack.id}
                   matchId={matchId}
+                  battleSlug={battleSlug}
                   voteCount={pack.voteCount}
                   votingClosed={votingClosed}
                 />

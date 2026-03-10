@@ -665,7 +665,7 @@ export default async function Page({
 						{(homeVotes + awayVotes).toLocaleString()}
 					</p>
 				</div>
-				<JoinBattleButton targetId="submit-chant-section" />
+				<JoinBattleButton targetId="submit-chant-section" battleSlug={routeSlug} />
 			</section>
 
 			<section id="submit-chant-section" className="space-y-4">
@@ -688,7 +688,11 @@ export default async function Page({
 				<FanSubmittedChants battleSlug={routeSlug} votingClosed={votingClosed} />
 			</section>
 
-			<OfficialChantPacks matchId={battle.id || slug} votingClosed={votingClosed} />
+			<OfficialChantPacks
+				matchId={battle.id || slug}
+				battleSlug={routeSlug}
+				votingClosed={votingClosed}
+			/>
 		</div>
 	);
 }

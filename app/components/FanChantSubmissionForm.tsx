@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { submitFanChant } from "@/app/battles/[slug]/chant-actions";
+import { trackAnalyticsEvent } from "@/app/lib/analyticsClient";
 import ChantAudioUpload from "@/components/ChantAudioUpload";
 
 interface FanChantSubmissionFormProps {
@@ -143,6 +144,9 @@ export default function FanChantSubmissionForm({
       });
 
       if (result.success) {
+        trackAnalyticsEvent("chant_submit", {
+          battle_slug: battleSlug,
+        });
         setTitle("");
         setLyrics("");
         setLatestChantId(result.chantId || null);

@@ -1,16 +1,25 @@
 "use client";
 
 import { useState } from "react";
+import { trackAnalyticsEvent } from "@/app/lib/analyticsClient";
 
 interface JoinBattleButtonProps {
   targetId?: string;
+  battleSlug?: string;
 }
 
-export default function JoinBattleButton({ targetId }: JoinBattleButtonProps) {
+export default function JoinBattleButton({
+  targetId,
+  battleSlug,
+}: JoinBattleButtonProps) {
   const [fansJoined, setFansJoined] = useState(1);
 
   const handleJoinBattle = () => {
     setFansJoined((prev) => prev + 1);
+
+    trackAnalyticsEvent("battle_join", {
+      battle_slug: battleSlug || undefined,
+    });
 
     if (!targetId) {
       return;

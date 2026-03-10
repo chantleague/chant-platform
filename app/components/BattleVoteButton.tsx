@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/app/lib/supabase";
+import { trackAnalyticsEvent } from "@/app/lib/analyticsClient";
 // server action for inserting votes and revalidating
 import { voteMVP } from "@/app/battles/[slug]/actions";
 
@@ -68,6 +69,9 @@ export default function BattleVoteButton({
         setHasVoted(true);
         const newCount = votes + 1;
         setVotes(newCount);
+        trackAnalyticsEvent("chant_vote", {
+          battle_slug: battleSlug,
+        });
         onVoteChange?.(newCount, true);
         setMessageIsError(false);
       } else {
