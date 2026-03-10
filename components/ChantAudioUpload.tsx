@@ -8,6 +8,7 @@ import { toChantAudioStorageErrorMessage } from "@/app/lib/storage";
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(["mp3", "wav", "m4a", "webm", "ogg"]);
 const CHANT_AUDIO_BUCKET = "chant-audio";
+const FALLBACK_UPLOAD_ERROR = "Upload failed — please retry.";
 
 type RecordingFormat = {
   mimeType: string;
@@ -120,6 +121,49 @@ function toUploadContentType(file: File) {
   }
 
   return "audio/mpeg";
+}
+
+function splitStoragePath(filePath: string) {
+  const normalized = String(filePath || "").trim().replace(/^\/+/, "");
+  const lastSlashIndex = normalized.lastIndexOf("/");
+
+  if (lastSlashIndex === -1) {
+    return {
+      folderPath: "",
+      fileName: normalized,
+    };
+  }
+
+  return {
+    folderPath: normalized.slice(0, lastSlashIndex),
+    fileName: normalized.slice(lastSlashIndex + 1),
+  };
+}
+
+async function verifyUploadedFileExists(filePath: string) {
+  const { folderPath, fileName } = splitStoragePath(filePath);
+  if (!fileName) {
+    return false;
+  }
+
+  const { data, error } = await supabase.storage.from("chant-audio").list(folderPath, {
+    limit: 100,
+    search: fileName,
+  });
+
+  if (error) {
+    console.error("chant audio upload: verify list failed", {
+      bucketName: CHANT_AUDIO_BUCKET,
+      filePath,
+      folderPath,
+      error: error.message || "list failed",
+    });
+    return false;
+  }
+
+  return Array.isArray(data)
+    ? data.some((entry) => String(entry?.name || "").trim() === fileName)
+    : false;
 }
 
 interface ChantAudioUploadProps {
@@ -388,6 +432,25 @@ export default function ChantAudioUpload({
         storagePathSource,
       });
 
+      const isStoredInSupabase = await verifyUploadedFileExists(uploadedPath);
+
+      if (!isStoredInSupabase) {
+        console.error("UPLOAD ERROR", {
+          bucketName: CHANT_AUDIO_BUCKET,
+          filePath: uploadedPath,
+          error: "uploaded file could not be verified in bucket",
+        });
+
+        try {
+          await supabase.storage.from("chant-audio").remove([uploadedPath]);
+        } catch (cleanupError) {
+          console.error("chant audio cleanup failed", cleanupError);
+        }
+
+        setError(FALLBACK_UPLOAD_ERROR);
+        return;
+      }
+
       const { data: publicUrlData } = supabase.storage
         .from("chant-audio")
         .getPublicUrl(filePath);
@@ -468,7 +531,7 @@ export default function ChantAudioUpload({
         filePath,
         error: uploadError,
       });
-      setError("Could not upload audio right now.");
+      setError(FALLBACK_UPLOAD_ERROR);
     } finally {
       setIsUploading(false);
     }
@@ -580,7 +643,10 @@ export default function ChantAudioUpload({
 
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-950/40 px-3 py-2 text-xs text-red-300">
-          {error}
+          <p>{error}</p>
+          {error !== FALLBACK_UPLOAD_ERROR && (
+            <p className="mt-1 text-[11px] text-red-200">{FALLBACK_UPLOAD_ERROR}</p>
+          )}
         </div>
       )}
     </section>
