@@ -134,6 +134,11 @@ export default async function Page({
 	}
 
 	const battleId = battle.id || "";
+	const kickoffTimeCandidate =
+		typeof battle.kickoff_time === "string" && battle.kickoff_time.trim()
+			? battle.kickoff_time
+			: null;
+	const kickoffTime = kickoffTimeCandidate || battle.starts_at || null;
 	const normalizedStatus = (battle.status || "").toString().toLowerCase();
 	const submissionWindowOpen =
 		Boolean(battleId) &&
@@ -209,7 +214,7 @@ export default async function Page({
 				<FanChantSubmissionForm
 					battleSlug={slug}
 					submissionOpen={submissionWindowOpen}
-					startsAt={battle.starts_at || null}
+					kickoffTime={kickoffTime}
 					simpleMode
 				/>
 

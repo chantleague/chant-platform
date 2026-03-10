@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { submitFanChant } from "@/app/battles/[slug]/chant-actions";
 import ChantAudioUpload from "@/components/ChantAudioUpload";
@@ -8,7 +8,7 @@ import ChantAudioUpload from "@/components/ChantAudioUpload";
 interface FanChantSubmissionFormProps {
   battleSlug: string;
   submissionOpen: boolean;
-  startsAt?: string | null;
+  kickoffTime?: string | null;
   simpleMode?: boolean;
 }
 
@@ -32,10 +32,40 @@ function getOrCreateFanId() {
   return id;
 }
 
+function getRemainingSeconds(kickoffTime?: string | null) {
+  const rawKickoff = String(kickoffTime || "").trim();
+  if (!rawKickoff) {
+    return null;
+  }
+
+  const kickoffTimestamp = new Date(rawKickoff).getTime();
+  if (Number.isNaN(kickoffTimestamp)) {
+    return null;
+  }
+
+  const diffInMilliseconds = kickoffTimestamp - Date.now();
+  if (diffInMilliseconds <= 0) {
+    return 0;
+  }
+
+  return Math.floor(diffInMilliseconds / 1000);
+}
+
+function formatCountdown(totalSeconds: number) {
+  const safeTotalSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeTotalSeconds / 3600);
+  const minutes = Math.floor((safeTotalSeconds % 3600) / 60);
+  const seconds = safeTotalSeconds % 60;
+
+  return [hours, minutes, seconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(" : ");
+}
+
 export default function FanChantSubmissionForm({
   battleSlug,
   submissionOpen,
-  startsAt,
+  kickoffTime,
   simpleMode = false,
 }: FanChantSubmissionFormProps) {
   const router = useRouter();
@@ -46,15 +76,38 @@ export default function FanChantSubmissionForm({
     typeof window === "undefined" ? "" : getOrCreateFanId(),
   );
   const [latestChantId, setLatestChantId] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(() =>
+    typeof window === "undefined" ? null : getRemainingSeconds(kickoffTime),
+  );
   const [isPending, startTransition] = useTransition();
+
+  const kickoffReached = typeof timeLeft === "number" && timeLeft <= 0;
+
+  useEffect(() => {
+    if (!submissionOpen || !kickoffTime) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      const nextTimeLeft = getRemainingSeconds(kickoffTime);
+      setTimeLeft(nextTimeLeft);
+      if (nextTimeLeft === 0) {
+        window.clearInterval(intervalId);
+      }
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [kickoffTime, submissionOpen]);
 
   if (!submissionOpen) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
         Submission window is closed for this battle.
-        {startsAt && (
+        {kickoffTime && (
           <div className="mt-1 text-xs text-zinc-500">
-            Kickoff: {new Date(startsAt).toLocaleString()}
+            Kickoff: {new Date(kickoffTime).toLocaleString()}
           </div>
         )}
       </div>
@@ -69,7 +122,7 @@ export default function FanChantSubmissionForm({
       setFanId(activeFanId);
     }
 
-    if (!activeFanId || isPending) {
+    if (!activeFanId || isPending || kickoffReached) {
       return;
     }
 
@@ -107,6 +160,21 @@ export default function FanChantSubmissionForm({
         </p>
       </div>
 
+      {typeof timeLeft === "number" && (
+        <div className="rounded-xl border border-amber-900/60 bg-amber-950/20 p-3">
+          <p className="text-xs uppercase tracking-[0.14em] text-amber-300">Battle closes in:</p>
+          <p className="mt-1 font-mono text-lg font-semibold text-amber-200">
+            {formatCountdown(timeLeft)}
+          </p>
+        </div>
+      )}
+
+      {kickoffReached && (
+        <div className="rounded-lg border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-200">
+          Submissions closed — voting continues.
+        </div>
+      )}
+
       {feedback && (
         <div
           className={`rounded-lg border px-3 py-2 text-sm ${
@@ -128,6 +196,7 @@ export default function FanChantSubmissionForm({
             id="fan-chant-title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
+            disabled={kickoffReached}
             required
             maxLength={80}
             placeholder="e.g., North Bank Roar"
@@ -144,6 +213,7 @@ export default function FanChantSubmissionForm({
           id="fan-chant-lyrics"
           value={lyrics}
           onChange={(event) => setLyrics(event.target.value)}
+          disabled={kickoffReached}
           required
           maxLength={500}
           rows={4}
@@ -154,10 +224,10 @@ export default function FanChantSubmissionForm({
 
       <button
         type="submit"
-        disabled={isPending}
+        disabled={isPending || kickoffReached}
         className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-700"
       >
-        {isPending ? "Submitting..." : "Submit Chant"}
+        {kickoffReached ? "Submissions Closed" : isPending ? "Submitting..." : "Submit Chant"}
       </button>
 
       {latestChantId && fanId && (
