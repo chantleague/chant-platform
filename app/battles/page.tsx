@@ -55,6 +55,15 @@ export default async function BattlesPage() {
             const clubDisplay = homeClub && awayClub
               ? `${homeClub.name} vs ${awayClub.name}`
               : slugVal.replace(/-/g, " ");
+            const normalizedStatus = String(battle.status || "").toLowerCase();
+            const cardStatus: "live" | "upcoming" | "finished" =
+              normalizedStatus === "open" || normalizedStatus === "live"
+                ? "live"
+                : normalizedStatus === "closed" ||
+                    normalizedStatus === "finished" ||
+                    normalizedStatus === "completed"
+                  ? "finished"
+                  : "upcoming";
 
             return (
               <BattleCard
@@ -62,10 +71,7 @@ export default async function BattlesPage() {
                 slug={slugVal}
                 title={clubDisplay}
                 subtitle={battle.description || ""}
-                status={
-                  (battle.status as "live" | "upcoming" | "finished") ||
-                  "upcoming"
-                }
+                status={cardStatus}
                 tag="battle"
                 metricLabel="Fans Joined"
                 metricValue={battle.stats?.fansJoined?.toLocaleString() || "0"}

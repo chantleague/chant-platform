@@ -1,115 +1,9 @@
 import Link from "next/link";
-import { deriveBattleRouteSlug } from "@/app/lib/battleRoutes";
-import { mockBattles } from "@/app/lib/mockBattles";
-import { supabase } from "@/app/lib/supabase";
-
-type TrendingBattle = {
-  slug: string;
-  homeName: string;
-  awayName: string;
-  votes: number;
-};
-
-function toDisplayName(value?: unknown): string {
-  const normalized = String(value || "").trim();
-  if (!normalized) {
-    return "";
-  }
-
-  return normalized
-    .replace(/_/g, "-")
-    .split(/[-\s]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function parseTeamsFromTitle(title: string): { homeName: string; awayName: string } | null {
-  const match = title.match(/(.+?)\s+vs\s+(.+)/i);
-  if (!match) {
-    return null;
-  }
-
-  return {
-    homeName: match[1].trim(),
-    awayName: match[2].trim(),
-  };
-}
-
-function toVotes(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  const parsed = Number.parseInt(String(value || ""), 10);
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function fallbackTrendingBattles(): TrendingBattle[] {
-  return mockBattles.slice(0, 6).map((battle) => {
-    const teams = parseTeamsFromTitle(battle.title);
-    return {
-      slug: battle.slug,
-      homeName: teams?.homeName || "Home Club",
-      awayName: teams?.awayName || "Away Club",
-      votes: battle.stats.voters,
-    };
-  });
-}
-
-async function getTrendingBattles(): Promise<TrendingBattle[]> {
-  const fallback = fallbackTrendingBattles();
-
-  try {
-    const { data, error } = await supabase
-      .from("matches")
-      .select("slug, title, home_team, away_team, vote_count")
-      .order("vote_count", { ascending: false })
-      .limit(6);
-
-    if (error) {
-      console.error("home: failed to fetch trending battles", error);
-      return fallback;
-    }
-
-    const normalized = (((data as Array<Record<string, unknown>> | null) || [])
-      .map((row) => {
-        const slug = deriveBattleRouteSlug({
-          slug: row.slug,
-          homeTeam: row.home_team,
-          awayTeam: row.away_team,
-        });
-
-        if (!slug) {
-          return null;
-        }
-
-        const title = String(row.title || "").trim();
-        const parsedFromTitle = parseTeamsFromTitle(title);
-
-        const homeName =
-          toDisplayName(row.home_team) || parsedFromTitle?.homeName || "Home Club";
-        const awayName =
-          toDisplayName(row.away_team) || parsedFromTitle?.awayName || "Away Club";
-
-        return {
-          slug,
-          homeName,
-          awayName,
-          votes: toVotes(row.vote_count),
-        } satisfies TrendingBattle;
-      })
-      .filter((battle): battle is TrendingBattle => Boolean(battle)));
-
-    return normalized.length > 0 ? normalized : fallback;
-  } catch (error) {
-    console.error("home: unexpected trending battles error", error);
-    return fallback;
-  }
-}
+import EmailSignup from "@/components/EmailSignup";
+import { getTrendingBattles } from "@/lib/trendingBattles";
 
 export default async function HomePage() {
-  const trendingBattles = await getTrendingBattles();
+  const trendingBattles = (await getTrendingBattles()).slice(0, 6);
 
   return (
     <div className="space-y-14 pb-8">
@@ -160,31 +54,53 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="space-y-5">
+      <section id="trending" className="space-y-5 scroll-mt-24">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Trending Battles</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-50">Most-Voted Matchups Right Now</h2>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">🔥 Trending Battles</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-50">Most Active Matchups Right Now</h2>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {trendingBattles.map((battle) => (
-            <article
-              key={battle.slug}
-              className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5 transition hover:border-zinc-600"
-            >
-              <h3 className="text-lg font-semibold text-zinc-100">
-                {battle.homeName} vs {battle.awayName}
-              </h3>
-              <p className="mt-2 text-sm text-zinc-400">Votes: {battle.votes.toLocaleString()}</p>
-              <Link
-                href={`/battles/${encodeURIComponent(battle.slug)}`}
-                className="mt-4 inline-flex rounded-full border border-emerald-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-300 transition hover:bg-emerald-500 hover:text-black"
-              >
-                Open Battle
-              </Link>
-            </article>
-          ))}
-        </div>
+        {trendingBattles.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5 text-sm text-zinc-400">
+            No trending battles available yet.
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {trendingBattles.map((battle) => {
+              const statusTone =
+                battle.status === "open"
+                  ? "border-emerald-700/60 bg-emerald-950/30 text-emerald-200"
+                  : battle.status === "upcoming"
+                    ? "border-amber-700/60 bg-amber-950/30 text-amber-200"
+                    : "border-red-700/60 bg-red-950/30 text-red-200";
+
+              return (
+                <article
+                  key={battle.slug}
+                  className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5 transition hover:border-zinc-600"
+                >
+                  <h3 className="text-lg font-semibold text-zinc-100">
+                    {battle.homeName} vs {battle.awayName}
+                  </h3>
+                  <p className="mt-2 text-sm text-zinc-400">Votes: {battle.votes.toLocaleString()}</p>
+                  <span
+                    className={`mt-3 inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${statusTone}`}
+                  >
+                    {battle.status}
+                  </span>
+                  <div>
+                    <Link
+                      href={`/battles/${encodeURIComponent(battle.slug)}`}
+                      className="mt-4 inline-flex rounded-full border border-emerald-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-300 transition hover:bg-emerald-500 hover:text-black"
+                    >
+                      Open Battle
+                    </Link>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="rounded-3xl border border-zinc-800 bg-zinc-950/70 px-6 py-12 text-center">
@@ -198,6 +114,8 @@ export default async function HomePage() {
           View Battles
         </Link>
       </section>
+
+      <EmailSignup />
     </div>
   );
 }

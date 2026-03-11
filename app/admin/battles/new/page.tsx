@@ -185,8 +185,8 @@ export default function Page() {
               className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-50 focus:border-emerald-500 focus:outline-none"
             >
               <option value="upcoming">Upcoming</option>
-              <option value="live">Live</option>
-              <option value="completed">Completed</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
             </select>
           </div>
         </div>

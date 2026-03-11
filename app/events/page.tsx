@@ -85,7 +85,7 @@ export default async function EventsPage() {
         </p>
       </header>
 
-      <AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_EVENTS_HEADER_SLOT} />
+      <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_EVENTS} />
 
       {events.length === 0 ? (
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6 text-sm text-zinc-400">
@@ -111,8 +111,6 @@ export default async function EventsPage() {
           ))}
         </div>
       )}
-
-      <AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_EVENTS_BOTTOM_SLOT} />
     </div>
   );
 }

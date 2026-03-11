@@ -2,6 +2,7 @@
 
 import { supabaseServer as supabase } from "@/app/lib/supabaseServer";
 import { revalidatePath } from "next/cache";
+import { resolveBattleStatus } from "@/lib/battleStatus";
 
 interface VoteResult {
   success: boolean;
@@ -9,22 +10,7 @@ interface VoteResult {
 }
 
 function isVotingOpen(status?: string | null, kickoffTime?: string | null) {
-  const normalizedStatus = (status || "").toLowerCase();
-  if (normalizedStatus === "completed" || normalizedStatus === "finished") {
-    return false;
-  }
-
-  const kickoff = String(kickoffTime || "").trim();
-  if (!kickoff) {
-    return true;
-  }
-
-  const kickoffTimestamp = new Date(kickoff).getTime();
-  if (Number.isNaN(kickoffTimestamp)) {
-    return true;
-  }
-
-  return Date.now() < kickoffTimestamp;
+  return resolveBattleStatus(kickoffTime, status) !== "closed";
 }
 
 // server action invoked from client components to cast an MVP vote

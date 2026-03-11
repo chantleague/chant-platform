@@ -3,6 +3,7 @@ import { toRenderableChantText } from "@/app/lib/chantContent";
 import { mockBattles } from "@/app/lib/mockBattles";
 import { supabase } from "@/app/lib/supabase";
 import { supabaseServer } from "@/app/lib/supabaseServer";
+import { resolveBattleStatus } from "@/lib/battleStatus";
 
 type RawRow = Record<string, unknown>;
 
@@ -102,22 +103,7 @@ function toSafeErrorLog(error: unknown) {
 }
 
 function isVotingOpen(status?: string | null, kickoffTime?: string | null) {
-  const normalizedStatus = (status || "").toLowerCase();
-  if (normalizedStatus === "completed" || normalizedStatus === "finished") {
-    return false;
-  }
-
-  const kickoff = String(kickoffTime || "").trim();
-  if (!kickoff) {
-    return true;
-  }
-
-  const kickoffTimestamp = new Date(kickoff).getTime();
-  if (Number.isNaN(kickoffTimestamp)) {
-    return true;
-  }
-
-  return Date.now() < kickoffTimestamp;
+  return resolveBattleStatus(kickoffTime, status) !== "closed";
 }
 
 async function getMatchVotingWindow(matchId: string): Promise<{ isOpen: boolean; errorMessage?: string }> {
@@ -296,7 +282,7 @@ export async function getActiveBattles(): Promise<ApiBattle[]> {
         supabase
           .from("matches")
           .select("id, slug, home_team, away_team, starts_at, status")
-          .not("status", "in", "(completed,finished)"),
+          .not("status", "in", "(closed,completed,finished)"),
         supabase.from("clubs").select("slug, name"),
       ]);
 

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { supabaseServer as supabase } from "@/app/lib/supabaseServer";
+import { resolveBattleStatus } from "@/lib/battleStatus";
 
 const MAX_CHANTS_PER_USER = 2;
 
@@ -25,6 +26,7 @@ interface ResolvedMatch {
   id: string;
   status: string | null;
   startsAt: string | null;
+  kickoff: string | null;
 }
 
 interface LinkFanChantAudioInput {
@@ -67,22 +69,8 @@ interface AdaptiveChantPackInsertResult {
   attemptMessages: string[];
 }
 
-function isSubmissionWindowOpen(status?: string | null, startsAt?: string | null) {
-  const normalizedStatus = (status || "").toLowerCase();
-  if (normalizedStatus && normalizedStatus !== "upcoming") {
-    return false;
-  }
-
-  if (!startsAt) {
-    return true;
-  }
-
-  const kickoff = new Date(startsAt).getTime();
-  if (Number.isNaN(kickoff)) {
-    return true;
-  }
-
-  return Date.now() < kickoff;
+function isSubmissionWindowOpen(status?: string | null, kickoffTime?: string | null) {
+  return resolveBattleStatus(kickoffTime, status) === "open";
 }
 
 function extractMissingTableColumn(errorMessage: string, tableName: string): string | null {
@@ -220,16 +208,24 @@ async function resolveMatchBySlug(
   battleSlug: string,
 ): Promise<{ match: ResolvedMatch | null; errorMessage?: string }> {
   try {
-    const { data, error } = await supabase
+    let matchLookup = await supabase
       .from("matches")
-      .select("id, status, starts_at")
+      .select("id, status, starts_at, kickoff")
       .eq("slug", battleSlug)
       .maybeSingle();
 
-    if (error) {
+    if (matchLookup.error && /column .*kickoff.* does not exist/i.test(matchLookup.error.message || "")) {
+      matchLookup = await supabase
+        .from("matches")
+        .select("id, status, starts_at")
+        .eq("slug", battleSlug)
+        .maybeSingle();
+    }
+
+    if (matchLookup.error) {
       console.error("submitFanChant: match slug lookup failed", {
         battleSlug,
-        error,
+        error: matchLookup.error,
       });
       return {
         match: null,
@@ -237,18 +233,24 @@ async function resolveMatchBySlug(
       };
     }
 
-    if (!data?.id) {
+    if (!matchLookup.data?.id) {
       return {
         match: null,
         errorMessage: `Could not find battle "${battleSlug}".`,
       };
     }
 
+    const rawKickoff =
+      "kickoff" in matchLookup.data && typeof matchLookup.data.kickoff === "string"
+        ? matchLookup.data.kickoff
+        : null;
+
     return {
       match: {
-        id: String(data.id),
-        status: data.status ? String(data.status) : null,
-        startsAt: data.starts_at ? String(data.starts_at) : null,
+        id: String(matchLookup.data.id),
+        status: matchLookup.data.status ? String(matchLookup.data.status) : null,
+        startsAt: matchLookup.data.starts_at ? String(matchLookup.data.starts_at) : null,
+        kickoff: rawKickoff,
       },
     };
   } catch (error) {
@@ -304,12 +306,16 @@ export async function submitFanChant(
     const resolvedMatchId = match.id;
 
     const status = match.status;
-    const startsAt = match.startsAt;
+    const kickoffTime = match.kickoff || match.startsAt;
+    const battleStatus = resolveBattleStatus(kickoffTime, status);
 
-    if (!isSubmissionWindowOpen(status, startsAt)) {
+    if (!isSubmissionWindowOpen(status, kickoffTime)) {
       return {
         success: false,
-        message: "Submission window is closed for this battle.",
+        message:
+          battleStatus === "upcoming"
+            ? "Battle is not open for submissions yet."
+            : "Submission window is closed for this battle.",
       };
     }
 

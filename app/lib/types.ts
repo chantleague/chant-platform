@@ -12,7 +12,8 @@ export interface Battle {
   home_team?: string;
   away_team?: string;
   matchday?: number | null;
-  status?: "upcoming" | "live" | "completed" | "finished";
+  status?: "upcoming" | "open" | "closed" | "live" | "completed" | "finished";
+  kickoff?: string | null;
   starts_at?: string | null;
   kickoff_time?: string | null;
   winning_chant_id?: string | null;

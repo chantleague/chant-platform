@@ -216,10 +216,13 @@ export default async function ClubPage({
               const slugVal = b.slug || "";
               const [clubA, clubB] = slugVal.split("-vs-");
               const fallbackTitle = `${clubA.replace(/-/g, " ")} vs ${(clubB || "").replace(/-/g, " ")}`;
+              const normalizedStatus = String(b.status || "").toLowerCase();
               const status: "live" | "upcoming" | "finished" =
-                b.status === "live"
+                normalizedStatus === "live" || normalizedStatus === "open"
                   ? "live"
-                  : b.status === "finished" || b.status === "completed"
+                  : normalizedStatus === "finished" ||
+                      normalizedStatus === "completed" ||
+                      normalizedStatus === "closed"
                   ? "finished"
                   : "upcoming";
               return (

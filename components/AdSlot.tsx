@@ -43,20 +43,26 @@ function loadAdSenseScript(adClient: string) {
 }
 
 type AdSlotProps = {
-  adClient?: string;
-  adSlot?: string;
+  slot?: string;
   className?: string;
 };
 
 export default function AdSlot({
-  adClient = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID || "ca-pub-XXXX",
-  adSlot = process.env.NEXT_PUBLIC_ADSENSE_SLOT_ID || "XXXX",
+  slot,
   className = "",
 }: AdSlotProps) {
+  const adClient = String(process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID || "").trim();
+  const adSlot = String(slot || "").trim();
+  const shouldRenderAd = Boolean(adClient && adSlot);
+
   const adRef = useRef<HTMLModElement | null>(null);
   const hasPushedRef = useRef(false);
 
   useEffect(() => {
+    if (!shouldRenderAd) {
+      return;
+    }
+
     let cancelled = false;
 
     loadAdSenseScript(adClient).then(() => {
@@ -79,7 +85,11 @@ export default function AdSlot({
     return () => {
       cancelled = true;
     };
-  }, [adClient, adSlot]);
+  }, [adClient, adSlot, shouldRenderAd]);
+
+  if (!shouldRenderAd) {
+    return null;
+  }
 
   return (
     <div className={`my-8 flex w-full justify-center ${className}`.trim()}>

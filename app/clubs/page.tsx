@@ -59,7 +59,7 @@ export default async function ClubsPage() {
         </p>
       </header>
 
-      <AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_CLUBS_HEADER_SLOT} />
+      <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_CLUBS} />
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {(clubs || []).map((club) => (
@@ -71,8 +71,6 @@ export default async function ClubsPage() {
           />
         ))}
       </div>
-
-      <AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_CLUBS_BOTTOM_SLOT} />
     </div>
   );
 }

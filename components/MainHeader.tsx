@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/app/lib/supabase";
 
 const navItems = [
+  { href: "/#trending", label: "Trending" },
   { href: "/battles", label: "Battles" },
   { href: "/clubs", label: "Clubs" },
   { href: "/events", label: "Events" },

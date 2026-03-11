@@ -17,6 +17,9 @@ import BattleVoteButton from "@/app/components/BattleVoteButton";
 import FanChantSubmissionForm from "@/app/components/FanChantSubmissionForm";
 import FanSubmittedChants from "@/app/components/FanSubmittedChants";
 import AdSlot from "@/components/AdSlot";
+import BattleShare from "@/components/BattleShare";
+import BattleCountdown from "@/components/BattleCountdown";
+import { resolveBattleStatus } from "@/lib/battleStatus";
 
 type BattleParams = { slug: string | string[] };
 const SITE_URL = "https://chantleague.com";
@@ -64,6 +67,15 @@ function toTimestamp(value?: string | null) {
 }
 
 function resolveKickoffTime(battle: Battle) {
+	const kickoffColumn =
+		typeof battle.kickoff === "string" && battle.kickoff.trim()
+			? battle.kickoff.trim()
+			: null;
+
+	if (kickoffColumn) {
+		return kickoffColumn;
+	}
+
 	const kickoffCandidate =
 		typeof battle.kickoff_time === "string" && battle.kickoff_time.trim()
 			? battle.kickoff_time.trim()
@@ -78,20 +90,6 @@ function resolveKickoffTime(battle: Battle) {
 		: null;
 
 	return startsAt;
-}
-
-function hasKickoffPassed(kickoffTime?: string | null) {
-	const normalizedKickoff = String(kickoffTime || "").trim();
-	if (!normalizedKickoff) {
-		return false;
-	}
-
-	const kickoffTimestamp = new Date(normalizedKickoff).getTime();
-	if (Number.isNaN(kickoffTimestamp)) {
-		return false;
-	}
-
-	return Date.now() >= kickoffTimestamp;
 }
 
 function toClubDisplayName(value?: string | null) {
@@ -149,8 +147,8 @@ export async function generateMetadata({
 	const canonicalSlug = normalizedParamSlug || normalizeBattleSlug(battle?.slug);
 	const { homeName, awayName } = resolveRivalryNames(canonicalSlug, battle);
 
-	const title = `${homeName} vs ${awayName} Chant Battle | Chant League`;
-	const description = `Vote for the best fan chant in the ${homeName} vs ${awayName} rivalry battle. Fans compete for club pride on Chant League.`;
+	const title = `${homeName} vs ${awayName} Chant Battle`;
+	const description = "Fans vote for the best chant before kickoff.";
 	const canonicalUrl = `${SITE_URL}/battles/${encodeURIComponent(canonicalSlug || "battle")}`;
 	const ogImageUrl = `/api/og/battle/${encodeURIComponent(canonicalSlug || "battle")}`;
 
@@ -486,14 +484,9 @@ export default async function Page({
 
 	const battleId = battle.id || "";
 	const kickoffTime = resolveKickoffTime(battle);
-	const normalizedStatus = (battle.status || "").toString().toLowerCase();
-	const votingClosed =
-		normalizedStatus === "completed" ||
-		normalizedStatus === "finished" ||
-		hasKickoffPassed(kickoffTime);
-	const submissionWindowOpen =
-		Boolean(battleId) &&
-		(normalizedStatus === "" || normalizedStatus === "upcoming");
+	const battleStatus = resolveBattleStatus(kickoffTime, battle.status ? String(battle.status) : null);
+	const votingClosed = battleStatus === "closed";
+	const submissionWindowOpen = Boolean(battleId) && battleStatus === "open";
 
 	let winnerChantText: string | null = null;
 	let winnerVoteCount = 0;
@@ -601,7 +594,38 @@ export default async function Page({
 				{battle.description && <p className="max-w-2xl text-sm text-zinc-400">{battle.description}</p>}
 			</header>
 
-			<AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_BATTLE_HEADER_SLOT} />
+			<section
+				className={`rounded-2xl border p-4 ${
+					battleStatus === "open"
+						? "border-emerald-700/50 bg-emerald-950/30"
+						: battleStatus === "upcoming"
+						? "border-amber-700/50 bg-amber-950/30"
+						: "border-red-700/50 bg-red-950/30"
+				}`}
+			>
+				<p
+					className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${
+						battleStatus === "open"
+							? "text-emerald-300"
+							: battleStatus === "upcoming"
+							? "text-amber-300"
+							: "text-red-300"
+					}`}
+				>
+					{battleStatus.toUpperCase()}
+				</p>
+				<div className="mt-2">
+					<BattleCountdown kickoff={kickoffTime} status={battleStatus} />
+				</div>
+			</section>
+
+			<BattleShare
+				slug={routeSlug}
+				homeClub={homeClub?.name || toClubDisplayName(battle.home_team || "") || "Home Club"}
+				awayClub={awayClub?.name || toClubDisplayName(battle.away_team || "") || "Away Club"}
+			/>
+
+			<AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_BATTLE_TOP} />
 
 			{votingClosed && (
 				<section className="rounded-2xl border border-amber-700/50 bg-amber-950/20 p-4">
@@ -689,8 +713,6 @@ export default async function Page({
 				/>
 
 				<FanSubmittedChants battleSlug={routeSlug} votingClosed={votingClosed} />
-
-				<AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_BATTLE_LEADERBOARD_SLOT} />
 			</section>
 
 			<OfficialChantPacks
@@ -699,7 +721,7 @@ export default async function Page({
 				votingClosed={votingClosed}
 			/>
 
-			<AdSlot adSlot={process.env.NEXT_PUBLIC_ADSENSE_BATTLE_BOTTOM_SLOT} />
+			<AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_BATTLE_BOTTOM} />
 		</div>
 	);
 }

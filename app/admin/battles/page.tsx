@@ -72,19 +72,27 @@ export default async function Page() {
                     {battle.home_team} vs {battle.away_team}
                   </td>
                   <td className="px-6 py-4 text-sm">
+                    {(() => {
+                      const normalizedStatus = String(battle.status || "upcoming").toLowerCase();
+                      const statusTone =
+                        normalizedStatus === "open" || normalizedStatus === "live"
+                          ? "bg-emerald-950/50 text-emerald-400"
+                          : normalizedStatus === "closed" ||
+                              normalizedStatus === "completed" ||
+                              normalizedStatus === "finished"
+                            ? "bg-red-950/50 text-red-300"
+                            : "bg-amber-950/50 text-amber-300";
+
+                      return (
                     <span
-                      className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        battle.status === "live"
-                          ? "bg-red-950/50 text-red-400"
-                          : battle.status === "completed"
-                          ? "bg-zinc-800 text-zinc-400"
-                          : "bg-emerald-950/50 text-emerald-400"
-                      }`}
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusTone}`}
                     >
-                      {battle.status
-                        ? battle.status.charAt(0).toUpperCase() + battle.status.slice(1)
-                        : "Upcoming"}
+                          {normalizedStatus
+                            ? normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1)
+                            : "Upcoming"}
                     </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4 text-sm text-zinc-400">
                     {battle.starts_at
