@@ -2,15 +2,84 @@
 
 import { supabaseServer as supabase } from "@/app/lib/supabaseServer";
 import { revalidatePath } from "next/cache";
-import { resolveBattleStatus } from "@/lib/battleStatus";
+import {
+  getBattleLifecycleFromRow,
+  isVotingOpen as isLifecycleVotingOpen,
+} from "@/lib/battleLifecycle";
 
 interface VoteResult {
   success: boolean;
   message: string;
 }
 
-function isVotingOpen(status?: string | null, kickoffTime?: string | null) {
-  return resolveBattleStatus(kickoffTime, status) !== "closed";
+function extractMissingTableColumn(errorMessage: string, tableName: string): string | null {
+  const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const schemaCachePattern = new RegExp(
+    `Could not find the '([^']+)' column of '${escapedTableName}' in the schema cache`,
+    "i",
+  );
+  const schemaCacheMatch = errorMessage.match(schemaCachePattern);
+  if (schemaCacheMatch?.[1]) {
+    return schemaCacheMatch[1];
+  }
+
+  const directPattern = /column\s+(?:\w+\.)?"?([a-zA-Z0-9_]+)"?\s+does not exist/i;
+  const directMatch = errorMessage.match(directPattern);
+  if (directMatch?.[1]) {
+    return directMatch[1];
+  }
+
+  return null;
+}
+
+async function lookupMatchLifecycleById(battleId: string) {
+  const selectColumns = [
+    "id",
+    "status",
+    "starts_at",
+    "kickoff",
+    "kickoff_time",
+    "kickoff_at",
+    "battle_opens_at",
+    "submission_opens_at",
+    "voting_opens_at",
+    "submission_closes_at",
+    "voting_closes_at",
+    "winner_reveal_at",
+  ];
+
+  const disabledColumns = new Set<string>();
+
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    const columns = selectColumns.filter((column) => !disabledColumns.has(column));
+    if (columns.length === 0) {
+      break;
+    }
+
+    const lookup = await supabase
+      .from("matches")
+      .select(columns.join(", "))
+      .eq("id", battleId)
+      .maybeSingle();
+
+    if (!lookup.error) {
+      return lookup;
+    }
+
+    const missingColumn = extractMissingTableColumn(lookup.error.message || "", "matches");
+    if (missingColumn) {
+      disabledColumns.add(missingColumn);
+      continue;
+    }
+
+    return lookup;
+  }
+
+  return await supabase
+    .from("matches")
+    .select("id")
+    .eq("id", battleId)
+    .maybeSingle();
 }
 
 // server action invoked from client components to cast an MVP vote
@@ -29,39 +98,21 @@ export async function voteMVP(
 
   // hard-stop voting once kickoff has passed
   try {
-    let matchQuery = await supabase
-      .from("matches")
-      .select("id, status, starts_at, kickoff_time")
-      .eq("id", battleId)
-      .maybeSingle();
-
-    if (
-      matchQuery.error &&
-      /column .*kickoff_time.* does not exist/i.test(matchQuery.error.message || "")
-    ) {
-      matchQuery = await supabase
-        .from("matches")
-        .select("id, status, starts_at")
-        .eq("id", battleId)
-        .maybeSingle();
-    }
+    const matchQuery = await lookupMatchLifecycleById(battleId);
 
     if (matchQuery.error) {
       console.error("voteMVP: failed to validate battle window", matchQuery.error);
       return { success: false, message: "Could not validate vote window." };
     }
 
-    if (!matchQuery.data?.id) {
+    const matchRow = (matchQuery.data as unknown as Record<string, unknown> | null) || null;
+
+    if (!matchRow?.id) {
       return { success: false, message: "Battle not found." };
     }
 
-    const rawKickoff =
-      "kickoff_time" in matchQuery.data && typeof matchQuery.data.kickoff_time === "string"
-        ? matchQuery.data.kickoff_time
-        : null;
-    const kickoffTime = rawKickoff || (matchQuery.data.starts_at ? String(matchQuery.data.starts_at) : null);
-
-    if (!isVotingOpen(matchQuery.data.status ? String(matchQuery.data.status) : null, kickoffTime)) {
+    const lifecycle = getBattleLifecycleFromRow(matchRow);
+    if (!isLifecycleVotingOpen(Date.now(), lifecycle)) {
       return { success: false, message: "Voting is closed for this battle." };
     }
   } catch (err) {

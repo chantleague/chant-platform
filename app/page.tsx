@@ -2,6 +2,47 @@ import Link from "next/link";
 import EmailSignup from "@/components/EmailSignup";
 import { getTrendingBattles } from "@/lib/trendingBattles";
 
+function formatKickoff(value?: string | null) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "Kickoff TBD";
+  }
+
+  const timestamp = new Date(normalized);
+  if (Number.isNaN(timestamp.getTime())) {
+    return "Kickoff TBD";
+  }
+
+  return timestamp.toLocaleString();
+}
+
+function formatTimeUntil(value?: string | null) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "TBD";
+  }
+
+  const targetMs = new Date(normalized).getTime();
+  if (Number.isNaN(targetMs)) {
+    return "TBD";
+  }
+
+  const diffMs = targetMs - Date.now();
+  if (diffMs <= 0) {
+    return "Closed";
+  }
+
+  const totalHours = Math.floor(diffMs / (60 * 60 * 1000));
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
+
+  return `${hours}h`;
+}
+
 export default async function HomePage() {
   const trendingBattles = (await getTrendingBattles()).slice(0, 6);
 
@@ -68,11 +109,15 @@ export default async function HomePage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {trendingBattles.map((battle) => {
               const statusTone =
-                battle.status === "open"
-                  ? "border-emerald-700/60 bg-emerald-950/30 text-emerald-200"
-                  : battle.status === "upcoming"
-                    ? "border-amber-700/60 bg-amber-950/30 text-amber-200"
-                    : "border-red-700/60 bg-red-950/30 text-red-200";
+                battle.phase === "final_scoring"
+                  ? "border-fuchsia-700/60 bg-fuchsia-950/30 text-fuchsia-200"
+                  : battle.phase === "winner_reveal"
+                    ? "border-rose-700/60 bg-rose-950/30 text-rose-200"
+                    : battle.status === "open"
+                      ? "border-emerald-700/60 bg-emerald-950/30 text-emerald-200"
+                      : battle.status === "upcoming"
+                        ? "border-amber-700/60 bg-amber-950/30 text-amber-200"
+                        : "border-red-700/60 bg-red-950/30 text-red-200";
 
               return (
                 <article
@@ -83,11 +128,22 @@ export default async function HomePage() {
                     {battle.homeName} vs {battle.awayName}
                   </h3>
                   <p className="mt-2 text-sm text-zinc-400">Votes: {battle.votes.toLocaleString()}</p>
-                  <span
-                    className={`mt-3 inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${statusTone}`}
-                  >
-                    {battle.status}
-                  </span>
+                  <p className="text-xs text-zinc-400">Kickoff: {formatKickoff(battle.kickoffAt)}</p>
+                  <p className="text-xs text-zinc-400">
+                    Voting closes in: {formatTimeUntil(battle.votingClosesAt)}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span
+                      className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${statusTone}`}
+                    >
+                      {battle.phase.replace(/_/g, " ")}
+                    </span>
+                    {battle.phaseBadge && (
+                      <span className="inline-flex rounded-full border border-amber-500/70 bg-amber-950/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-200">
+                        {battle.phaseBadge}
+                      </span>
+                    )}
+                  </div>
                   <div>
                     <Link
                       href={`/battles/${encodeURIComponent(battle.slug)}`}

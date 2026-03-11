@@ -2,10 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { supabaseServer as supabase } from "@/app/lib/supabaseServer";
-import { resolveBattleStatus } from "@/lib/battleStatus";
+import {
+  getBattleLifecycleFromRow,
+  getBattleStatus,
+  isSubmissionOpen as isLifecycleSubmissionOpen,
+  type BattlePhaseStatus,
+} from "@/lib/battleLifecycle";
 import { recordScoreEvent } from "@/lib/recordScoreEvent";
 
 const MAX_CHANTS_PER_USER = 2;
+const CHANT_CATEGORIES = ["praise", "roast", "meme", "player"] as const;
+type ChantCategory = (typeof CHANT_CATEGORIES)[number];
 
 interface SubmitFanChantInput {
   battleSlug: string;
@@ -14,6 +21,7 @@ interface SubmitFanChantInput {
   lyrics?: string;
   chantText?: string;
   clubId?: string;
+  category?: string;
 }
 
 interface SubmitFanChantResult {
@@ -28,6 +36,13 @@ interface ResolvedMatch {
   status: string | null;
   startsAt: string | null;
   kickoff: string | null;
+  kickoffAt: string | null;
+  battleOpensAt: string | null;
+  submissionOpensAt: string | null;
+  votingOpensAt: string | null;
+  submissionClosesAt: string | null;
+  votingClosesAt: string | null;
+  winnerRevealAt: string | null;
 }
 
 interface LinkFanChantAudioInput {
@@ -70,22 +85,51 @@ interface AdaptiveChantPackInsertResult {
   attemptMessages: string[];
 }
 
-function isSubmissionWindowOpen(status?: string | null, kickoffTime?: string | null) {
-  return resolveBattleStatus(kickoffTime, status) === "open";
+function isSubmissionWindowOpen(match: ResolvedMatch) {
+  const lifecycle = getBattleLifecycleFromRow({
+    kickoff_at: match.kickoffAt || match.kickoff || match.startsAt,
+    battle_opens_at: match.battleOpensAt,
+    submission_opens_at: match.submissionOpensAt,
+    voting_opens_at: match.votingOpensAt,
+    submission_closes_at: match.submissionClosesAt,
+    voting_closes_at: match.votingClosesAt,
+    winner_reveal_at: match.winnerRevealAt,
+  });
+
+  return isLifecycleSubmissionOpen(Date.now(), lifecycle);
+}
+
+function normalizeChantCategory(value?: string): ChantCategory {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (CHANT_CATEGORIES.includes(normalized as ChantCategory)) {
+    return normalized as ChantCategory;
+  }
+
+  return "praise";
+}
+
+function isSubmissionNotOpenYet(phase: BattlePhaseStatus) {
+  return phase === "upcoming" || phase === "discussion";
 }
 
 function extractMissingTableColumn(errorMessage: string, tableName: string): string | null {
   const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(
+  const schemaCachePattern = new RegExp(
     `Could not find the '([^']+)' column of '${escapedTableName}' in the schema cache`,
     "i",
   );
-  const match = errorMessage.match(pattern);
-  if (!match?.[1]) {
-    return null;
+  const schemaCacheMatch = errorMessage.match(schemaCachePattern);
+  if (schemaCacheMatch?.[1]) {
+    return schemaCacheMatch[1];
   }
 
-  return match[1];
+  const directPattern = /column\s+(?:\w+\.)?"?([a-zA-Z0-9_]+)"?\s+does not exist/i;
+  const directMatch = errorMessage.match(directPattern);
+  if (directMatch?.[1]) {
+    return directMatch[1];
+  }
+
+  return null;
 }
 
 async function adaptiveCreateChantPack(
@@ -209,16 +253,44 @@ async function resolveMatchBySlug(
   battleSlug: string,
 ): Promise<{ match: ResolvedMatch | null; errorMessage?: string }> {
   try {
+    const selectColumns = [
+      "id",
+      "status",
+      "starts_at",
+      "kickoff",
+      "kickoff_at",
+      "battle_opens_at",
+      "submission_opens_at",
+      "voting_opens_at",
+      "submission_closes_at",
+      "voting_closes_at",
+      "winner_reveal_at",
+    ];
+
+    const disabledColumns = new Set<string>();
+
     let matchLookup = await supabase
       .from("matches")
-      .select("id, status, starts_at, kickoff")
+      .select(selectColumns.join(", "))
       .eq("slug", battleSlug)
       .maybeSingle();
 
-    if (matchLookup.error && /column .*kickoff.* does not exist/i.test(matchLookup.error.message || "")) {
+    while (matchLookup.error) {
+      const missingColumn = extractMissingTableColumn(matchLookup.error.message || "", "matches");
+      if (!missingColumn) {
+        break;
+      }
+
+      disabledColumns.add(missingColumn);
+
+      const reducedColumns = selectColumns.filter((column) => !disabledColumns.has(column));
+      if (reducedColumns.length === 0) {
+        break;
+      }
+
       matchLookup = await supabase
         .from("matches")
-        .select("id, status, starts_at")
+        .select(reducedColumns.join(", "))
         .eq("slug", battleSlug)
         .maybeSingle();
     }
@@ -234,24 +306,30 @@ async function resolveMatchBySlug(
       };
     }
 
-    if (!matchLookup.data?.id) {
+    const matchRow = (matchLookup.data as unknown as Record<string, unknown> | null) || null;
+
+    if (!matchRow?.id) {
       return {
         match: null,
         errorMessage: `Could not find battle "${battleSlug}".`,
       };
     }
 
-    const rawKickoff =
-      "kickoff" in matchLookup.data && typeof matchLookup.data.kickoff === "string"
-        ? matchLookup.data.kickoff
-        : null;
+    const row = matchRow;
 
     return {
       match: {
-        id: String(matchLookup.data.id),
-        status: matchLookup.data.status ? String(matchLookup.data.status) : null,
-        startsAt: matchLookup.data.starts_at ? String(matchLookup.data.starts_at) : null,
-        kickoff: rawKickoff,
+        id: String(row.id),
+        status: row.status ? String(row.status) : null,
+        startsAt: row.starts_at ? String(row.starts_at) : null,
+        kickoff: row.kickoff ? String(row.kickoff) : null,
+        kickoffAt: row.kickoff_at ? String(row.kickoff_at) : null,
+        battleOpensAt: row.battle_opens_at ? String(row.battle_opens_at) : null,
+        submissionOpensAt: row.submission_opens_at ? String(row.submission_opens_at) : null,
+        votingOpensAt: row.voting_opens_at ? String(row.voting_opens_at) : null,
+        submissionClosesAt: row.submission_closes_at ? String(row.submission_closes_at) : null,
+        votingClosesAt: row.voting_closes_at ? String(row.voting_closes_at) : null,
+        winnerRevealAt: row.winner_reveal_at ? String(row.winner_reveal_at) : null,
       },
     };
   } catch (error) {
@@ -272,6 +350,7 @@ export async function submitFanChant(
   const battleSlug = input.battleSlug?.trim().toLowerCase();
   const userId = input.userId?.trim();
   const clubId = input.clubId?.trim() || null;
+  const category = normalizeChantCategory(input.category);
   const chantText = (input.chantText || input.lyrics || "").trim().slice(0, 500);
 
   const requestedTitle = (input.title || "").trim().slice(0, 80);
@@ -306,15 +385,22 @@ export async function submitFanChant(
 
     const resolvedMatchId = match.id;
 
-    const status = match.status;
-    const kickoffTime = match.kickoff || match.startsAt;
-    const battleStatus = resolveBattleStatus(kickoffTime, status);
+    const lifecycle = getBattleLifecycleFromRow({
+      kickoff_at: match.kickoffAt || match.kickoff || match.startsAt,
+      battle_opens_at: match.battleOpensAt,
+      submission_opens_at: match.submissionOpensAt,
+      voting_opens_at: match.votingOpensAt,
+      submission_closes_at: match.submissionClosesAt,
+      voting_closes_at: match.votingClosesAt,
+      winner_reveal_at: match.winnerRevealAt,
+    });
+    const battleStatus = getBattleStatus(Date.now(), lifecycle);
 
-    if (!isSubmissionWindowOpen(status, kickoffTime)) {
+    if (!isSubmissionWindowOpen(match)) {
       return {
         success: false,
         message:
-          battleStatus === "upcoming"
+          isSubmissionNotOpenYet(battleStatus)
             ? "Battle is not open for submissions yet."
             : "Submission window is closed for this battle.",
       };
@@ -386,6 +472,7 @@ export async function submitFanChant(
       description: chantText,
       chant_text: chantText,
       lyrics: chantText,
+      category,
       official: false,
       created_at: createdAt,
     };
@@ -420,6 +507,7 @@ export async function submitFanChant(
       user_id: userId,
       fan_id: userId,
       created_by: userId,
+      category,
       vote_count: 0,
       votes: 0,
       created_at: createdAt,
@@ -471,6 +559,7 @@ export async function submitFanChant(
             chant_pack_id: createdPackId,
             match_id: resolvedMatchId,
             chant_text: chantText,
+            category,
             created_at: createdAt,
           },
         };
@@ -499,6 +588,7 @@ export async function submitFanChant(
         metadata: {
           battle_slug: battleSlug,
           title,
+          category,
         },
       });
 

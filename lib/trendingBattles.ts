@@ -3,15 +3,27 @@ import "server-only";
 import { deriveBattleRouteSlug } from "@/app/lib/battleRoutes";
 import { mockBattles } from "@/app/lib/mockBattles";
 import { supabaseServer } from "@/app/lib/supabaseServer";
-import { resolveBattleStatus, type BattleLifecycleStatus } from "@/lib/battleStatus";
+import {
+  getBattleLifecycleFromRow,
+  getBattleStatus,
+  type BattlePhaseStatus,
+} from "@/lib/battleLifecycle";
 
 type RawRow = Record<string, unknown>;
 
 const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-const STATUS_WEIGHT: Record<BattleLifecycleStatus, number> = {
-  open: 1.5,
+type LegacyStatus = "open" | "upcoming" | "closed";
+
+const PHASE_WEIGHT: Record<BattlePhaseStatus, number> = {
   upcoming: 1,
+  discussion: 1.1,
+  submission_open: 1.2,
+  voting_open: 1.5,
+  final_scoring: 1.8,
+  voting_closed: 0.9,
+  winner_reveal: 0.8,
+  live: 1.2,
   closed: 0.6,
 };
 
@@ -23,7 +35,11 @@ export interface TrendingBattle {
   votes: number;
   recentSubmissions: number;
   recentVotes: number;
-  status: BattleLifecycleStatus;
+  status: LegacyStatus;
+  phase: BattlePhaseStatus;
+  kickoffAt: string | null;
+  votingClosesAt: string | null;
+  phaseBadge: "FINAL PUSH" | "WINNER SOON" | null;
   score: number;
 }
 
@@ -75,19 +91,33 @@ function toVotes(value: unknown): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function getKickoff(row: RawRow): string | null {
-  const kickoff = String(row.kickoff || "").trim();
-  if (kickoff) {
-    return kickoff;
+function toLegacyStatus(phase: BattlePhaseStatus): LegacyStatus {
+  if (phase === "upcoming") {
+    return "upcoming";
   }
 
-  const kickoffTime = String(row.kickoff_time || "").trim();
-  if (kickoffTime) {
-    return kickoffTime;
+  if (
+    phase === "discussion" ||
+    phase === "submission_open" ||
+    phase === "voting_open" ||
+    phase === "final_scoring"
+  ) {
+    return "open";
   }
 
-  const startsAt = String(row.starts_at || "").trim();
-  return startsAt || null;
+  return "closed";
+}
+
+function toPhaseBadge(phase: BattlePhaseStatus): "FINAL PUSH" | "WINNER SOON" | null {
+  if (phase === "winner_reveal") {
+    return "WINNER SOON";
+  }
+
+  if (phase === "final_scoring") {
+    return "FINAL PUSH";
+  }
+
+  return null;
 }
 
 function buildFallbackTrendingBattles(): TrendingBattle[] {
@@ -96,7 +126,8 @@ function buildFallbackTrendingBattles(): TrendingBattle[] {
     const votes = battle.stats.voters;
     const recentSubmissions = Math.max(1, Math.round(battle.stats.chants / 100));
     const recentVotes = Math.max(1, Math.round(votes / 200));
-    const status: BattleLifecycleStatus = index % 3 === 0 ? "open" : "upcoming";
+    const phase: BattlePhaseStatus = index % 3 === 0 ? "voting_open" : "upcoming";
+    const status = toLegacyStatus(phase);
     const baseScore = votes * 3 + recentSubmissions * 5 + recentVotes * 2;
 
     return {
@@ -107,8 +138,12 @@ function buildFallbackTrendingBattles(): TrendingBattle[] {
       votes,
       recentSubmissions,
       recentVotes,
+      phase,
       status,
-      score: Number((baseScore * STATUS_WEIGHT[status]).toFixed(2)),
+      kickoffAt: null,
+      votingClosesAt: null,
+      phaseBadge: toPhaseBadge(phase),
+      score: Number((baseScore * PHASE_WEIGHT[phase]).toFixed(2)),
     };
   });
 }
@@ -244,10 +279,12 @@ export async function getTrendingBattles(): Promise<TrendingBattle[]> {
         const votes = Math.max(toVotes(row.vote_count), allVoteCounts.get(id) || 0);
         const recentSubmissions = recentSubmissionCounts.get(id) || 0;
         const recentVotes = recentVoteCounts.get(id) || 0;
-        const status = resolveBattleStatus(getKickoff(row), String(row.status || ""));
+        const lifecycle = getBattleLifecycleFromRow(row);
+        const phase = getBattleStatus(Date.now(), lifecycle);
+        const status = toLegacyStatus(phase);
 
         const baseScore = votes * 3 + recentSubmissions * 5 + recentVotes * 2;
-        const score = Number((baseScore * STATUS_WEIGHT[status]).toFixed(2));
+        const score = Number((baseScore * PHASE_WEIGHT[phase]).toFixed(2));
 
         return {
           id,
@@ -257,7 +294,11 @@ export async function getTrendingBattles(): Promise<TrendingBattle[]> {
           votes,
           recentSubmissions,
           recentVotes,
+          phase,
           status,
+          kickoffAt: lifecycle.kickoff_at,
+          votingClosesAt: lifecycle.voting_closes_at,
+          phaseBadge: toPhaseBadge(phase),
           score,
         } satisfies TrendingBattle;
       })

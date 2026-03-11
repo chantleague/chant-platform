@@ -6,13 +6,29 @@ export type BattleCardProps = {
   title: string;
   subtitle: string;
   status: "live" | "upcoming" | "finished";
+  phaseLabel?: string;
+  phaseBadge?: string | null;
+  votingClosesIn?: string;
+  kickoffTime?: string;
   tag: string;
   metricLabel: string;
   metricValue: string;
 };
 
 export function BattleCard(props: BattleCardProps) {
-  const { slug, title, subtitle, status, tag, metricLabel, metricValue } = props;
+  const {
+    slug,
+    title,
+    subtitle,
+    status,
+    phaseLabel,
+    phaseBadge,
+    votingClosesIn,
+    kickoffTime,
+    tag,
+    metricLabel,
+    metricValue,
+  } = props;
   const safeSlug = normalizeBattleSlug(slug);
 
   const statusColor =
@@ -45,6 +61,30 @@ export function BattleCard(props: BattleCardProps) {
           VS
         </div>
       </div>
+      {(phaseLabel || kickoffTime || votingClosesIn || phaseBadge) && (
+        <div className="mt-3 space-y-1 rounded-xl border border-zinc-800 bg-zinc-900/60 p-2">
+          {phaseLabel && (
+            <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-300">
+              Phase: {phaseLabel}
+            </p>
+          )}
+          {phaseBadge && (
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-300">
+              {phaseBadge}
+            </p>
+          )}
+          {votingClosesIn && (
+            <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">
+              Voting closes in: {votingClosesIn}
+            </p>
+          )}
+          {kickoffTime && (
+            <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">
+              Kickoff: {kickoffTime}
+            </p>
+          )}
+        </div>
+      )}
       <div className="mt-4 flex items-center justify-between text-[11px] uppercase tracking-[0.16em] text-zinc-500">
         <span>{metricLabel}</span>
         <span className="text-xs font-semibold text-zinc-50">

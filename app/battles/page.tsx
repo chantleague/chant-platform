@@ -2,6 +2,56 @@ import { BattleCard } from "../components/BattleCard";
 import { supabase } from "@/app/lib/supabase";
 import { deriveBattleRouteSlug } from "@/app/lib/battleRoutes";
 import type { Battle, Club } from "../lib/types";
+import { getBattleLifecycleFromRow, getBattleStatus } from "@/lib/battleLifecycle";
+
+function getRenderNowMs() {
+  return Date.now();
+}
+
+function formatKickoff(value?: string | null) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "TBD";
+  }
+
+  const timestamp = new Date(normalized);
+  if (Number.isNaN(timestamp.getTime())) {
+    return "TBD";
+  }
+
+  return timestamp.toLocaleString();
+}
+
+function formatTimeUntil(value?: string | null, nowMs = getRenderNowMs()) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "TBD";
+  }
+
+  const targetMs = new Date(normalized).getTime();
+  if (Number.isNaN(targetMs)) {
+    return "TBD";
+  }
+
+  const diffMs = targetMs - nowMs;
+  if (diffMs <= 0) {
+    return "Closed";
+  }
+
+  const totalHours = Math.floor(diffMs / (60 * 60 * 1000));
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
+
+  return `${hours}h`;
+}
+
+function toPhaseLabel(value: string) {
+  return value.replace(/_/g, " ");
+}
 
 export default async function BattlesPage() {
   const { data: battlesData, error } = await supabase
@@ -56,14 +106,39 @@ export default async function BattlesPage() {
               ? `${homeClub.name} vs ${awayClub.name}`
               : slugVal.replace(/-/g, " ");
             const normalizedStatus = String(battle.status || "").toLowerCase();
+            const lifecycle = getBattleLifecycleFromRow({
+              kickoff_at:
+                (typeof battle.kickoff_at === "string" && battle.kickoff_at) ||
+                (typeof battle.kickoff === "string" && battle.kickoff) ||
+                (typeof battle.kickoff_time === "string" && battle.kickoff_time) ||
+                (typeof battle.starts_at === "string" && battle.starts_at) ||
+                null,
+              battle_opens_at: typeof battle.battle_opens_at === "string" ? battle.battle_opens_at : null,
+              submission_opens_at:
+                typeof battle.submission_opens_at === "string" ? battle.submission_opens_at : null,
+              voting_opens_at: typeof battle.voting_opens_at === "string" ? battle.voting_opens_at : null,
+              submission_closes_at:
+                typeof battle.submission_closes_at === "string" ? battle.submission_closes_at : null,
+              voting_closes_at:
+                typeof battle.voting_closes_at === "string" ? battle.voting_closes_at : null,
+              winner_reveal_at:
+                typeof battle.winner_reveal_at === "string" ? battle.winner_reveal_at : null,
+            });
+            const renderNowMs = getRenderNowMs();
+            const phase = getBattleStatus(renderNowMs, lifecycle);
             const cardStatus: "live" | "upcoming" | "finished" =
-              normalizedStatus === "open" || normalizedStatus === "live"
-                ? "live"
-                : normalizedStatus === "closed" ||
-                    normalizedStatus === "finished" ||
-                    normalizedStatus === "completed"
-                  ? "finished"
-                  : "upcoming";
+              phase === "upcoming"
+                ? "upcoming"
+                : phase === "discussion" ||
+                    phase === "submission_open" ||
+                    phase === "voting_open" ||
+                    phase === "final_scoring" ||
+                    normalizedStatus === "open" ||
+                    normalizedStatus === "live"
+                  ? "live"
+                  : "finished";
+
+            const phaseBadge = phase === "winner_reveal" ? "WINNER SOON" : phase === "final_scoring" ? "FINAL PUSH" : null;
 
             return (
               <BattleCard
@@ -72,6 +147,10 @@ export default async function BattlesPage() {
                 title={clubDisplay}
                 subtitle={battle.description || ""}
                 status={cardStatus}
+                phaseLabel={toPhaseLabel(phase)}
+                phaseBadge={phaseBadge}
+                votingClosesIn={formatTimeUntil(lifecycle.voting_closes_at, renderNowMs)}
+                kickoffTime={formatKickoff(lifecycle.kickoff_at)}
                 tag="battle"
                 metricLabel="Fans Joined"
                 metricValue={battle.stats?.fansJoined?.toLocaleString() || "0"}

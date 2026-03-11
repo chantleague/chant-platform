@@ -2,7 +2,7 @@ import "server-only";
 
 import { recordScoreEvent } from "@/lib/recordScoreEvent";
 
-export const SHARE_SOURCES = ["whatsapp", "tiktok", "twitter", "instagram"] as const;
+export const SHARE_SOURCES = ["whatsapp", "tiktok", "twitter", "copy_link"] as const;
 
 export type ShareSource = (typeof SHARE_SOURCES)[number];
 

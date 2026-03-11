@@ -21,7 +21,13 @@ import ChantScoreboard, { type ChantScoreboardRow } from "@/app/components/Chant
 import AdSlot from "@/components/AdSlot";
 import BattleShare from "@/components/BattleShare";
 import BattleCountdown from "@/components/BattleCountdown";
-import { resolveBattleStatus } from "@/lib/battleStatus";
+import {
+	getBattleLifecycleFromRow,
+	getBattleStatus,
+	isSubmissionOpen as isLifecycleSubmissionOpen,
+	isVotingOpen as isLifecycleVotingOpen,
+	type BattlePhaseStatus,
+} from "@/lib/battleLifecycle";
 
 type BattleParams = { slug: string | string[] };
 const SITE_URL = "https://chantleague.com";
@@ -68,7 +74,20 @@ function toTimestamp(value?: string | null) {
 	return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
+function getRenderNowMs() {
+	return Date.now();
+}
+
 function resolveKickoffTime(battle: Battle) {
+	const kickoffAt =
+		typeof battle.kickoff_at === "string" && battle.kickoff_at.trim()
+			? battle.kickoff_at.trim()
+			: null;
+
+	if (kickoffAt) {
+		return kickoffAt;
+	}
+
 	const kickoffColumn =
 		typeof battle.kickoff === "string" && battle.kickoff.trim()
 			? battle.kickoff.trim()
@@ -92,6 +111,92 @@ function resolveKickoffTime(battle: Battle) {
 		: null;
 
 	return startsAt;
+}
+
+function toPhaseBadgeTone(phase: BattlePhaseStatus) {
+	if (phase === "final_scoring") {
+		return {
+			container: "border-fuchsia-700/50 bg-fuchsia-950/30",
+			text: "text-fuchsia-300",
+		};
+	}
+
+	if (phase === "submission_open" || phase === "voting_open") {
+		return {
+			container: "border-emerald-700/50 bg-emerald-950/30",
+			text: "text-emerald-300",
+		};
+	}
+
+	if (phase === "winner_reveal" || phase === "voting_closed" || phase === "live" || phase === "closed") {
+		return {
+			container: "border-red-700/50 bg-red-950/30",
+			text: "text-red-300",
+		};
+	}
+
+	return {
+		container: "border-amber-700/50 bg-amber-950/30",
+		text: "text-amber-300",
+	};
+}
+
+function toPhaseLabel(phase: BattlePhaseStatus) {
+	if (phase === "submission_open") {
+		return "Submission Open";
+	}
+	if (phase === "voting_open") {
+		return "Voting Open";
+	}
+	if (phase === "final_scoring") {
+		return "Final Scoring";
+	}
+	if (phase === "voting_closed") {
+		return "Voting Closed";
+	}
+	if (phase === "winner_reveal") {
+		return "Winner Reveal";
+	}
+	if (phase === "discussion") {
+		return "Discussion";
+	}
+	if (phase === "live") {
+		return "Live";
+	}
+	if (phase === "closed") {
+		return "Closed";
+	}
+
+	return "Upcoming";
+}
+
+function toPhaseCta(phase: BattlePhaseStatus) {
+	if (phase === "discussion") {
+		return "Draft your chant";
+	}
+	if (phase === "submission_open") {
+		return "Submit your chant";
+	}
+	if (phase === "voting_open") {
+		return "Vote and share";
+	}
+	if (phase === "final_scoring") {
+		return "Final push";
+	}
+	if (phase === "voting_closed") {
+		return "Voting closed";
+	}
+	if (phase === "winner_reveal") {
+		return "Winner reveal underway";
+	}
+	if (phase === "live") {
+		return "Match is live";
+	}
+	if (phase === "closed") {
+		return "Battle closed";
+	}
+
+	return "Battle not open yet";
 }
 
 function toClubDisplayName(value?: string | null) {
@@ -377,16 +482,28 @@ async function resolveBattleBySlug(slug: string): Promise<Battle | null> {
 	return null;
 }
 
+interface ResolvedBattleChantData {
+	scoreboardRows: ChantScoreboardRow[];
+	shareableChants: Array<{
+		chantId: string;
+		chantText: string;
+		category: string | null;
+	}>;
+}
+
 async function resolveChantScoreboardRows(
 	battleId: string,
 	battleSlug: string,
-): Promise<ChantScoreboardRow[]> {
+): Promise<ResolvedBattleChantData> {
 	if (!battleId || !battleSlug) {
-		return [];
+		return {
+			scoreboardRows: [],
+			shareableChants: [],
+		};
 	}
 
 	const chantsPayload = await getChantsForBattleSlug(battleSlug);
-	const chantMetaById = new Map<string, { chantName: string }>();
+	const chantMetaById = new Map<string, { chantName: string; chantText: string; category: string | null }>();
 
 	chantsPayload.chants.forEach((chant, index) => {
 		const chantId = String(chant.chant_row_id || "").trim();
@@ -400,12 +517,17 @@ async function resolveChantScoreboardRows(
 
 		chantMetaById.set(chantId, {
 			chantName: toChantScoreboardName(String(chant.chant_text || "").trim(), `Fan Chant ${index + 1}`),
+			chantText: String(chant.chant_text || "").trim(),
+			category: chant.category ? String(chant.category).trim().toLowerCase() : null,
 		});
 	});
 
 	const chantIds = Array.from(chantMetaById.keys());
 	if (chantIds.length === 0) {
-		return [];
+		return {
+			scoreboardRows: [],
+			shareableChants: [],
+		};
 	}
 
 	const scoreLookup = await supabaseServer
@@ -431,7 +553,7 @@ async function resolveChantScoreboardRows(
 		}
 	});
 
-	return chantIds
+	const scoreboardRows = chantIds
 		.map((chantId) => {
 			const scoreRow = scoreByChantId.get(chantId);
 
@@ -456,6 +578,17 @@ async function resolveChantScoreboardRows(
 
 			return left.chantName.localeCompare(right.chantName);
 		});
+
+	const shareableChants = scoreboardRows.slice(0, 12).map((row) => ({
+		chantId: row.chantId,
+		chantText: chantMetaById.get(row.chantId)?.chantText || row.chantName,
+		category: chantMetaById.get(row.chantId)?.category || null,
+	}));
+
+	return {
+		scoreboardRows,
+		shareableChants,
+	};
 }
 
 export default async function Page({
@@ -584,14 +717,43 @@ export default async function Page({
 
 	const battleId = battle.id || "";
 	const kickoffTime = resolveKickoffTime(battle);
-	const battleStatus = resolveBattleStatus(kickoffTime, battle.status ? String(battle.status) : null);
-	const votingClosed = battleStatus === "closed";
-	const submissionWindowOpen = Boolean(battleId) && battleStatus === "open";
+	const lifecycle = getBattleLifecycleFromRow({
+		kickoff_at:
+			(typeof battle.kickoff_at === "string" && battle.kickoff_at) ||
+			(typeof battle.kickoff === "string" && battle.kickoff) ||
+			(typeof battle.kickoff_time === "string" && battle.kickoff_time) ||
+			(typeof battle.starts_at === "string" && battle.starts_at) ||
+			null,
+		battle_opens_at:
+			typeof battle.battle_opens_at === "string" ? battle.battle_opens_at : null,
+		submission_opens_at:
+			typeof battle.submission_opens_at === "string" ? battle.submission_opens_at : null,
+		voting_opens_at:
+			typeof battle.voting_opens_at === "string" ? battle.voting_opens_at : null,
+		submission_closes_at:
+			typeof battle.submission_closes_at === "string" ? battle.submission_closes_at : null,
+		voting_closes_at:
+			typeof battle.voting_closes_at === "string" ? battle.voting_closes_at : null,
+		winner_reveal_at:
+			typeof battle.winner_reveal_at === "string" ? battle.winner_reveal_at : null,
+	});
+	const renderNowMs = getRenderNowMs();
+
+	const battlePhase = getBattleStatus(renderNowMs, lifecycle);
+	const phaseTone = toPhaseBadgeTone(battlePhase);
+	const phaseCta = toPhaseCta(battlePhase);
+	const votingOpen = isLifecycleVotingOpen(renderNowMs, lifecycle);
+	const submissionWindowOpen = isLifecycleSubmissionOpen(renderNowMs, lifecycle);
+	const showWinnerBlock =
+		battlePhase === "winner_reveal" || battlePhase === "live" || battlePhase === "closed";
 
 	let chantScoreboardRows: ChantScoreboardRow[] = [];
+	let shareableChants: Array<{ chantId: string; chantText: string; category: string | null }> = [];
 	if (battleId && routeSlug) {
 		try {
-			chantScoreboardRows = await resolveChantScoreboardRows(battleId, routeSlug);
+			const chantData = await resolveChantScoreboardRows(battleId, routeSlug);
+			chantScoreboardRows = chantData.scoreboardRows;
+			shareableChants = chantData.shareableChants;
 		} catch (error) {
 			console.error("battle page: failed to resolve chant scoreboard rows", {
 				battleId,
@@ -611,7 +773,7 @@ export default async function Page({
 			: "";
 	let winnerClubLabel = "";
 
-	if (votingClosed && battleId) {
+	if (showWinnerBlock && battleId) {
 		const winner = await resolveWinnerChantCandidate(battleId);
 
 		if (winner) {
@@ -710,27 +872,16 @@ export default async function Page({
 			</header>
 
 			<section
-				className={`rounded-2xl border p-4 ${
-					battleStatus === "open"
-						? "border-emerald-700/50 bg-emerald-950/30"
-						: battleStatus === "upcoming"
-						? "border-amber-700/50 bg-amber-950/30"
-						: "border-red-700/50 bg-red-950/30"
-				}`}
+				className={`rounded-2xl border p-4 ${phaseTone.container}`}
 			>
 				<p
-					className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${
-						battleStatus === "open"
-							? "text-emerald-300"
-							: battleStatus === "upcoming"
-							? "text-amber-300"
-							: "text-red-300"
-					}`}
+					className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${phaseTone.text}`}
 				>
-					{battleStatus.toUpperCase()}
+					{toPhaseLabel(battlePhase).toUpperCase()}
 				</p>
+				<p className="mt-1 text-sm font-medium text-zinc-100">{phaseCta}</p>
 				<div className="mt-2">
-					<BattleCountdown kickoff={kickoffTime} status={battleStatus} />
+					<BattleCountdown lifecycle={lifecycle} phase={battlePhase} />
 				</div>
 			</section>
 
@@ -738,13 +889,14 @@ export default async function Page({
 				slug={routeSlug}
 				homeClub={homeClub?.name || toClubDisplayName(battle.home_team || "") || "Home Club"}
 				awayClub={awayClub?.name || toClubDisplayName(battle.away_team || "") || "Away Club"}
+				kickoffAt={kickoffTime}
 				battleId={battleId || undefined}
-				chantId={featuredChantId || undefined}
+				chants={shareableChants}
 			/>
 
 			<AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_BATTLE_TOP} />
 
-			{votingClosed && (
+			{showWinnerBlock && (
 				<section className="rounded-2xl border border-amber-700/50 bg-amber-950/20 p-4">
 					<p className="text-[11px] uppercase tracking-[0.2em] text-amber-300">🏆 Battle Winner</p>
 					{winnerChantText ? (
@@ -781,7 +933,7 @@ export default async function Page({
 						battleSlug={routeSlug}
 						clubSlug={battle.home_team || ""}
 						voteCount={homeVotes}
-						votingClosed={votingClosed}
+						votingClosed={!votingOpen}
 					/>
 				</div>
 				<div className="text-center">
@@ -793,7 +945,7 @@ export default async function Page({
 						battleSlug={routeSlug}
 						clubSlug={battle.away_team || ""}
 						voteCount={awayVotes}
-						votingClosed={votingClosed}
+						votingClosed={!votingOpen}
 					/>
 				</div>
 			</section>
@@ -840,13 +992,13 @@ export default async function Page({
 					simpleMode
 				/>
 
-				<FanSubmittedChants battleSlug={routeSlug} votingClosed={votingClosed} />
+				<FanSubmittedChants battleSlug={routeSlug} votingClosed={!votingOpen} />
 			</section>
 
 			<OfficialChantPacks
 				matchId={battle.id || slug}
 				battleSlug={routeSlug}
-				votingClosed={votingClosed}
+				votingClosed={!votingOpen}
 			/>
 
 			<AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_BATTLE_BOTTOM} />

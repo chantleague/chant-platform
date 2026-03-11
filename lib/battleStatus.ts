@@ -1,7 +1,10 @@
-export type BattleLifecycleStatus = "upcoming" | "open" | "closed";
+import {
+  getBattleLifecycle,
+  getBattleStatus as getBattlePhaseStatus,
+  type BattlePhaseStatus,
+} from "@/lib/battleLifecycle";
 
-const BATTLE_OPEN_WINDOW_HOURS = 24;
-const BATTLE_OPEN_WINDOW_MS = BATTLE_OPEN_WINDOW_HOURS * 60 * 60 * 1000;
+export type BattleLifecycleStatus = "upcoming" | "open" | "closed";
 
 function toKickoffMs(kickoff: string | Date | null | undefined) {
   if (!kickoff) {
@@ -36,43 +39,46 @@ export function normalizeBattleStatus(status?: string | null): BattleLifecycleSt
   return "upcoming";
 }
 
-export function getBattleStatus(kickoff: string | Date | null | undefined): BattleLifecycleStatus {
-  const kickoffMs = toKickoffMs(kickoff);
-  if (kickoffMs === null) {
-    return "upcoming";
-  }
-
-  const now = Date.now();
-  const opensAtMs = kickoffMs - BATTLE_OPEN_WINDOW_MS;
-
-  if (now < opensAtMs) {
-    return "upcoming";
-  }
-
-  if (now < kickoffMs) {
+function mapPhaseToLegacyStatus(phase: BattlePhaseStatus): BattleLifecycleStatus {
+  if (
+    phase === "discussion" ||
+    phase === "submission_open" ||
+    phase === "voting_open" ||
+    phase === "final_scoring"
+  ) {
     return "open";
+  }
+
+  if (phase === "upcoming") {
+    return "upcoming";
   }
 
   return "closed";
 }
 
-export function getBattleOpensAt(kickoff: string | Date | null | undefined): string | null {
-  const kickoffMs = toKickoffMs(kickoff);
-  if (kickoffMs === null) {
-    return null;
+export function getBattleStatus(kickoff: string | Date | null | undefined): BattleLifecycleStatus {
+  if (toKickoffMs(kickoff) === null) {
+    return "upcoming";
   }
 
-  return new Date(kickoffMs - BATTLE_OPEN_WINDOW_MS).toISOString();
+  const lifecycle = getBattleLifecycle(kickoff);
+  const phase = getBattlePhaseStatus(Date.now(), lifecycle);
+  return mapPhaseToLegacyStatus(phase);
+}
+
+export function getBattleOpensAt(kickoff: string | Date | null | undefined): string | null {
+  return getBattleLifecycle(kickoff).battle_opens_at;
 }
 
 export function resolveBattleStatus(
   kickoff: string | Date | null | undefined,
   storedStatus?: string | null,
 ): BattleLifecycleStatus {
-  const kickoffMs = toKickoffMs(kickoff);
-  if (kickoffMs === null) {
+  if (toKickoffMs(kickoff) === null) {
     return normalizeBattleStatus(storedStatus);
   }
 
-  return getBattleStatus(kickoff);
+  const lifecycle = getBattleLifecycle(kickoff);
+  const phase = getBattlePhaseStatus(Date.now(), lifecycle);
+  return mapPhaseToLegacyStatus(phase);
 }

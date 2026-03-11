@@ -13,6 +13,15 @@ interface FanChantWithVotes extends FanChant {
   voteCount: number;
 }
 
+function normalizeCategory(value: unknown): FanChant["category"] {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "praise" || normalized === "roast" || normalized === "meme" || normalized === "player") {
+    return normalized;
+  }
+
+  return "praise";
+}
+
 function isMissingColumnError(errorMessage: string, columnName: string) {
   if (!errorMessage) {
     return false;
@@ -31,6 +40,7 @@ function normalizeChant(chant: FanChant): FanChant {
     match_id: chant.match_id || chant.battle_id || "",
     battle_id: chant.battle_id ?? chant.match_id,
     club_id: chant.club_id ?? null,
+    category: normalizeCategory(chant.category),
     chant_text: chant.chant_text ?? chant.lyrics,
     audio_url: chant.audio_url ?? null,
   };
@@ -121,6 +131,7 @@ export default async function FanSubmittedChants({
       chant_id: string;
       chant_row_id?: string | null;
       match_id?: string | null;
+      category?: string | null;
       chant_text: string;
       votes: number;
       audio_url: string | null;
@@ -148,6 +159,7 @@ export default async function FanSubmittedChants({
           battle_id: matchId,
           chant_pack_id: chantPackId || null,
           club_id: null,
+          category: normalizeCategory(chant.category),
           title: "Fan Chant",
           chant_text: chantText,
           lyrics: chantText,
@@ -167,7 +179,7 @@ export default async function FanSubmittedChants({
   const byMatchId = await supabase
     .from("chants")
     .select(
-      "id, match_id, chant_pack_id, club_id, title, chant_text, lyrics, audio_url, submitted_by, created_at, vote_count, status",
+      "id, match_id, chant_pack_id, club_id, category, title, chant_text, lyrics, audio_url, submitted_by, created_at, vote_count, status",
     )
     .eq("match_id", resolvedMatchId)
     .eq("status", "approved")
@@ -181,7 +193,7 @@ export default async function FanSubmittedChants({
     const fallbackByMatchId = await supabase
       .from("chants")
       .select(
-        "id, match_id, chant_pack_id, club_id, title, chant_text, lyrics, audio_url, submitted_by, created_at, vote_count",
+        "id, match_id, chant_pack_id, club_id, category, title, chant_text, lyrics, audio_url, submitted_by, created_at, vote_count",
       )
       .eq("match_id", resolvedMatchId)
       .order("created_at", { ascending: false });
@@ -240,13 +252,13 @@ export default async function FanSubmittedChants({
       const legacyByBattleId = statusColumnAvailable
         ? await supabase
             .from("chants")
-            .select("id, battle_id, chant_pack_id, title, chant_text, lyrics, submitted_by, created_at")
+            .select("id, battle_id, chant_pack_id, category, title, chant_text, lyrics, submitted_by, created_at")
             .eq("battle_id", resolvedMatchId)
             .eq("status", "approved")
             .order("created_at", { ascending: false })
         : await supabase
             .from("chants")
-            .select("id, battle_id, chant_pack_id, title, chant_text, lyrics, submitted_by, created_at")
+            .select("id, battle_id, chant_pack_id, category, title, chant_text, lyrics, submitted_by, created_at")
             .eq("battle_id", resolvedMatchId)
             .order("created_at", { ascending: false });
 

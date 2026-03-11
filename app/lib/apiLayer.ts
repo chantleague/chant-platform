@@ -4,7 +4,10 @@ import { mockBattles } from "@/app/lib/mockBattles";
 import { supabase } from "@/app/lib/supabase";
 import { supabaseServer } from "@/app/lib/supabaseServer";
 import { recordScoreEvent } from "@/lib/recordScoreEvent";
-import { resolveBattleStatus } from "@/lib/battleStatus";
+import {
+  getBattleLifecycleFromRow,
+  isVotingOpen as isLifecycleVotingOpen,
+} from "@/lib/battleLifecycle";
 
 type RawRow = Record<string, unknown>;
 
@@ -32,6 +35,7 @@ type ApiChant = {
   chant_id: string;
   chant_row_id: string | null;
   match_id: string | null;
+  category: string | null;
   chant_text: string;
   votes: number;
   audio_url: string | null;
@@ -103,24 +107,78 @@ function toSafeErrorLog(error: unknown) {
   };
 }
 
-function isVotingOpen(status?: string | null, kickoffTime?: string | null) {
-  return resolveBattleStatus(kickoffTime, status) !== "closed";
+function extractMissingTableColumn(errorMessage: string, tableName: string): string | null {
+  const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const schemaCachePattern = new RegExp(
+    `Could not find the '([^']+)' column of '${escapedTableName}' in the schema cache`,
+    "i",
+  );
+  const schemaCacheMatch = errorMessage.match(schemaCachePattern);
+  if (schemaCacheMatch?.[1]) {
+    return schemaCacheMatch[1];
+  }
+
+  const directPattern = /column\s+(?:\w+\.)?"?([a-zA-Z0-9_]+)"?\s+does not exist/i;
+  const directMatch = errorMessage.match(directPattern);
+  if (directMatch?.[1]) {
+    return directMatch[1];
+  }
+
+  return null;
+}
+
+async function lookupMatchForVotingWindow(matchId: string) {
+  const selectColumns = [
+    "id",
+    "status",
+    "starts_at",
+    "kickoff",
+    "kickoff_time",
+    "kickoff_at",
+    "battle_opens_at",
+    "submission_opens_at",
+    "voting_opens_at",
+    "submission_closes_at",
+    "voting_closes_at",
+    "winner_reveal_at",
+  ];
+
+  const disabledColumns = new Set<string>();
+
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    const columns = selectColumns.filter((column) => !disabledColumns.has(column));
+    if (columns.length === 0) {
+      break;
+    }
+
+    const lookup = await supabaseServer
+      .from("matches")
+      .select(columns.join(", "))
+      .eq("id", matchId)
+      .maybeSingle();
+
+    if (!lookup.error) {
+      return lookup;
+    }
+
+    const missingColumn = extractMissingTableColumn(lookup.error.message || "", "matches");
+    if (missingColumn) {
+      disabledColumns.add(missingColumn);
+      continue;
+    }
+
+    return lookup;
+  }
+
+  return await supabaseServer
+    .from("matches")
+    .select("id")
+    .eq("id", matchId)
+    .maybeSingle();
 }
 
 async function getMatchVotingWindow(matchId: string): Promise<{ isOpen: boolean; errorMessage?: string }> {
-  let lookup = await supabaseServer
-    .from("matches")
-    .select("id, status, starts_at, kickoff_time")
-    .eq("id", matchId)
-    .maybeSingle();
-
-  if (lookup.error && isMissingColumnError(lookup.error.message || "", "kickoff_time")) {
-    lookup = await supabaseServer
-      .from("matches")
-      .select("id, status, starts_at")
-      .eq("id", matchId)
-      .maybeSingle();
-  }
+  const lookup = await lookupMatchForVotingWindow(matchId);
 
   if (lookup.error) {
     return {
@@ -129,21 +187,19 @@ async function getMatchVotingWindow(matchId: string): Promise<{ isOpen: boolean;
     };
   }
 
-  if (!lookup.data?.id) {
+  const lookupRow = (lookup.data as unknown as RawRow | null) || null;
+
+  if (!lookupRow?.id) {
     return {
       isOpen: false,
       errorMessage: "Battle not found.",
     };
   }
 
-  const rawKickoff =
-    "kickoff_time" in lookup.data && typeof lookup.data.kickoff_time === "string"
-      ? lookup.data.kickoff_time
-      : null;
-  const kickoffTime = rawKickoff || (lookup.data.starts_at ? String(lookup.data.starts_at) : null);
+  const lifecycle = getBattleLifecycleFromRow(lookupRow);
 
   return {
-    isOpen: isVotingOpen(lookup.data.status ? String(lookup.data.status) : null, kickoffTime),
+    isOpen: isLifecycleVotingOpen(Date.now(), lifecycle),
   };
 }
 
@@ -375,12 +431,12 @@ export async function getChantsForBattleSlug(
       let legacyByBattleId = statusColumnAvailable
         ? await supabase
             .from("chants")
-            .select("id, battle_id, chant_pack_id, lyrics, status")
+          .select("id, battle_id, chant_pack_id, lyrics, status")
             .eq("battle_id", battleId)
             .eq("status", "approved")
         : await supabase
             .from("chants")
-            .select("id, battle_id, chant_pack_id, lyrics")
+          .select("id, battle_id, chant_pack_id, lyrics")
             .eq("battle_id", battleId);
 
       if (legacyByBattleId.error && isMissingColumnError(legacyByBattleId.error.message || "", "status")) {
@@ -397,7 +453,7 @@ export async function getChantsForBattleSlug(
 
     const packsByMatch = await supabase
       .from("chant_packs")
-      .select("id, title, description, audio_url, created_at")
+      .select("id, title, description, audio_url, category, created_at")
       .eq("match_id", battleId)
       .eq("official", false)
       .order("created_at", { ascending: false });
@@ -408,7 +464,7 @@ export async function getChantsForBattleSlug(
     if (packsError && /column .*official.* does not exist/i.test(packsError.message || "")) {
       const legacyPacksByMatch = await supabase
         .from("chant_packs")
-        .select("id, title, description, audio_url, created_at")
+        .select("id, title, description, audio_url, category, created_at")
         .eq("match_id", battleId)
         .order("created_at", { ascending: false });
 
@@ -533,6 +589,7 @@ export async function getChantsForBattleSlug(
         chant_id: packId,
         chant_row_id: chantRowId,
         match_id: chantMeta?.matchId || battleId,
+        category: pack.category ? String(pack.category).trim().toLowerCase() : null,
         chant_text: chantText,
         votes:
           (chantRowId && typeof voteCountByChantId[chantRowId] === "number"

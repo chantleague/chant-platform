@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getBattleOpensAt, type BattleLifecycleStatus } from "@/lib/battleStatus";
+import type { BattleLifecycle, BattlePhaseStatus } from "@/lib/battleLifecycle";
 
 interface BattleCountdownProps {
-  kickoff: string | null;
-  status: BattleLifecycleStatus;
+  lifecycle: BattleLifecycle;
+  phase: BattlePhaseStatus;
 }
 
 function toMs(value?: string | null) {
@@ -29,7 +29,45 @@ function formatHhMmSs(totalSeconds: number) {
     .join(":");
 }
 
-export default function BattleCountdown({ kickoff, status }: BattleCountdownProps) {
+function toPhaseLabel(phase: BattlePhaseStatus) {
+  if (phase === "submission_open") {
+    return "Submission Open";
+  }
+  if (phase === "voting_open") {
+    return "Voting Open";
+  }
+  if (phase === "final_scoring") {
+    return "Final Scoring";
+  }
+  if (phase === "voting_closed") {
+    return "Voting Closed";
+  }
+  if (phase === "winner_reveal") {
+    return "Winner Reveal";
+  }
+  if (phase === "discussion") {
+    return "Discussion";
+  }
+  if (phase === "live") {
+    return "Live";
+  }
+  if (phase === "closed") {
+    return "Closed";
+  }
+
+  return "Upcoming";
+}
+
+function toCountdownText(targetMs: number | null, nowMs: number) {
+  if (targetMs === null) {
+    return "TBD";
+  }
+
+  const remainingSeconds = Math.max(0, Math.floor((targetMs - nowMs) / 1000));
+  return formatHhMmSs(remainingSeconds);
+}
+
+export default function BattleCountdown({ lifecycle, phase }: BattleCountdownProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -42,35 +80,47 @@ export default function BattleCountdown({ kickoff, status }: BattleCountdownProp
     };
   }, []);
 
-  const kickoffMs = useMemo(() => toMs(kickoff), [kickoff]);
-  const opensAtMs = useMemo(() => toMs(getBattleOpensAt(kickoff)), [kickoff]);
+  const submissionOpensMs = useMemo(() => toMs(lifecycle.submission_opens_at), [lifecycle.submission_opens_at]);
+  const submissionClosesMs = useMemo(() => toMs(lifecycle.submission_closes_at), [lifecycle.submission_closes_at]);
+  const votingOpensMs = useMemo(() => toMs(lifecycle.voting_opens_at), [lifecycle.voting_opens_at]);
+  const votingClosesMs = useMemo(() => toMs(lifecycle.voting_closes_at), [lifecycle.voting_closes_at]);
+  const winnerRevealMs = useMemo(() => toMs(lifecycle.winner_reveal_at), [lifecycle.winner_reveal_at]);
 
-  if (status === "closed") {
-    return <p className="font-mono text-sm text-red-300">Voting closed</p>;
-  }
+  const submissionTargetMs =
+    phase === "upcoming" || phase === "discussion" ? submissionOpensMs : submissionClosesMs;
+  const votingTargetMs =
+    phase === "upcoming" || phase === "discussion" || phase === "submission_open"
+      ? votingOpensMs
+      : votingClosesMs;
 
-  if (kickoffMs === null) {
-    return <p className="font-mono text-sm text-zinc-400">Kickoff time TBD</p>;
-  }
+  const submissionLabel =
+    phase === "upcoming" || phase === "discussion" ? "Submission opens in" : "Submission closes in";
+  const votingLabel =
+    phase === "upcoming" || phase === "discussion" || phase === "submission_open"
+      ? "Voting opens in"
+      : "Voting closes in";
 
-  if (status === "upcoming") {
-    const targetMs = opensAtMs ?? kickoffMs;
-    const remainingSeconds = Math.max(0, Math.floor((targetMs - nowMs) / 1000));
-
-    return (
-      <div className="space-y-1">
-        <p className="text-sm text-amber-200">Battle opens in {formatHhMmSs(remainingSeconds)}</p>
-        <p className="font-mono text-lg font-semibold text-amber-100">{formatHhMmSs(remainingSeconds)}</p>
-      </div>
-    );
-  }
-
-  const remainingToKickoff = Math.max(0, Math.floor((kickoffMs - nowMs) / 1000));
+  const winnerRevealLabel = phase === "winner_reveal" || phase === "live" || phase === "closed"
+    ? "Winner reveal"
+    : "Winner reveal in";
 
   return (
-    <div className="space-y-1">
-      <p className="text-sm text-emerald-200">Battle closes at kickoff</p>
-      <p className="font-mono text-lg font-semibold text-emerald-100">{formatHhMmSs(remainingToKickoff)}</p>
+    <div className="space-y-3">
+      <p className="text-sm font-semibold text-zinc-100">Current Phase: {toPhaseLabel(phase)}</p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <div className="rounded-lg border border-zinc-700 bg-zinc-900/70 p-2">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">{submissionLabel}</p>
+          <p className="font-mono text-sm text-zinc-100">{toCountdownText(submissionTargetMs, nowMs)}</p>
+        </div>
+        <div className="rounded-lg border border-zinc-700 bg-zinc-900/70 p-2">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">{votingLabel}</p>
+          <p className="font-mono text-sm text-zinc-100">{toCountdownText(votingTargetMs, nowMs)}</p>
+        </div>
+        <div className="rounded-lg border border-zinc-700 bg-zinc-900/70 p-2">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">{winnerRevealLabel}</p>
+          <p className="font-mono text-sm text-zinc-100">{toCountdownText(winnerRevealMs, nowMs)}</p>
+        </div>
+      </div>
     </div>
   );
 }

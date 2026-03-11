@@ -24,6 +24,13 @@ interface SubmitFanChantResponse {
   chantId?: string;
 }
 
+const CHANT_CATEGORY_OPTIONS = [
+  { value: "praise", label: "Praise" },
+  { value: "roast", label: "Roast" },
+  { value: "meme", label: "Meme" },
+  { value: "player", label: "Player" },
+] as const;
+
 function getOrCreateFanId() {
   let id = localStorage.getItem("chant-user-id");
   if (!id) {
@@ -72,6 +79,7 @@ export default function FanChantSubmissionForm({
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [lyrics, setLyrics] = useState("");
+  const [category, setCategory] = useState("praise");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [fanId, setFanId] = useState(() =>
     typeof window === "undefined" ? "" : getOrCreateFanId(),
@@ -136,6 +144,7 @@ export default function FanChantSubmissionForm({
         title: simpleMode ? undefined : title,
         lyrics,
         chantText: lyrics,
+        category,
       })) as SubmitFanChantResponse;
 
       setFeedback({
@@ -149,6 +158,7 @@ export default function FanChantSubmissionForm({
         });
         setTitle("");
         setLyrics("");
+        setCategory("praise");
         setLatestChantId(result.chantId || null);
         router.refresh();
       }
@@ -208,6 +218,25 @@ export default function FanChantSubmissionForm({
           />
         </div>
       )}
+
+      <div className="space-y-2">
+        <label htmlFor="fan-chant-category" className="block text-xs uppercase tracking-[0.14em] text-zinc-500">
+          Chant Category
+        </label>
+        <select
+          id="fan-chant-category"
+          value={category}
+          onChange={(event) => setCategory(event.target.value)}
+          disabled={kickoffReached}
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-50 focus:border-emerald-500 focus:outline-none"
+        >
+          {CHANT_CATEGORY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="space-y-2">
         <label htmlFor="fan-chant-lyrics" className="block text-xs uppercase tracking-[0.14em] text-zinc-500">

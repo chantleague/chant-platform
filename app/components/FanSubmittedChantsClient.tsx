@@ -14,6 +14,7 @@ interface RealtimeChantRow {
   match_id?: string | null;
   chant_pack_id?: string | null;
   club_id?: string | null;
+  category?: string | null;
   title?: string | null;
   chant_text?: string | null;
   lyrics?: string | null;
@@ -28,6 +29,30 @@ interface FanSubmittedChantsClientProps {
   battleSlug?: string;
   matchId?: string;
   votingClosed?: boolean;
+}
+
+const CATEGORY_ORDER = ["praise", "roast", "meme", "player"] as const;
+
+function normalizeCategory(value: unknown): (typeof CATEGORY_ORDER)[number] {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "praise" || normalized === "roast" || normalized === "meme" || normalized === "player") {
+    return normalized;
+  }
+
+  return "praise";
+}
+
+function toCategoryLabel(value: (typeof CATEGORY_ORDER)[number]) {
+  if (value === "praise") {
+    return "Praise";
+  }
+  if (value === "roast") {
+    return "Roast";
+  }
+  if (value === "meme") {
+    return "Meme";
+  }
+  return "Player";
 }
 
 function toTimestamp(value?: string | null) {
@@ -154,6 +179,10 @@ export default function FanSubmittedChantsClient({
           ? String(nextRow.chant_pack_id)
           : existing.chant_pack_id || null,
         club_id: nextRow.club_id ? String(nextRow.club_id) : existing.club_id || null,
+        category:
+          typeof nextRow.category === "string"
+            ? normalizeCategory(nextRow.category)
+            : normalizeCategory(existing.category),
         title: nextRow.title ? String(nextRow.title) : existing.title,
         chant_text:
           typeof nextRow.chant_text === "string" ? nextRow.chant_text : existing.chant_text,
@@ -231,8 +260,24 @@ export default function FanSubmittedChantsClient({
       .slice(0, 5);
   }, [chants]);
 
-  const newestChants = useMemo(() => {
-    return [...chants].sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at));
+  const chantsByCategory = useMemo(() => {
+    const grouped: Record<(typeof CATEGORY_ORDER)[number], FanChantWithVotes[]> = {
+      praise: [],
+      roast: [],
+      meme: [],
+      player: [],
+    };
+
+    chants.forEach((chant) => {
+      const category = normalizeCategory(chant.category);
+      grouped[category].push(chant);
+    });
+
+    CATEGORY_ORDER.forEach((category) => {
+      grouped[category].sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at));
+    });
+
+    return grouped;
   }, [chants]);
 
   const handleVoteChange = (chantId: string, newCount: number, hasVoted: boolean) => {
@@ -290,6 +335,9 @@ export default function FanSubmittedChantsClient({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-zinc-50">{chant.title}</h3>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-amber-300">
+              {toCategoryLabel(normalizeCategory(chant.category))}
+            </p>
             <p className="text-sm whitespace-pre-wrap text-zinc-300">{chantText}</p>
             <p
               className={`text-xs font-semibold transition-all duration-500 ${
@@ -356,9 +404,25 @@ export default function FanSubmittedChantsClient({
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-base font-semibold text-zinc-50">New Chants</h3>
-        {newestChants.length > 0 ? (
-          newestChants.map((chant) => renderChantCard(chant))
+        <h3 className="text-base font-semibold text-zinc-50">Chants By Category</h3>
+        {CATEGORY_ORDER.some((category) => chantsByCategory[category].length > 0) ? (
+          <div className="space-y-6">
+            {CATEGORY_ORDER.map((category) => {
+              const categoryChants = chantsByCategory[category];
+              if (categoryChants.length === 0) {
+                return null;
+              }
+
+              return (
+                <section key={category} className="space-y-3">
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-300">
+                    {toCategoryLabel(category)}
+                  </h4>
+                  {categoryChants.map((chant) => renderChantCard(chant))}
+                </section>
+              );
+            })}
+          </div>
         ) : (
           <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-4 text-sm text-zinc-400">
             New chants will appear here in real time.

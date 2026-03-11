@@ -14,6 +14,13 @@ export interface Battle {
   matchday?: number | null;
   status?: "upcoming" | "open" | "closed" | "live" | "completed" | "finished";
   kickoff?: string | null;
+  kickoff_at?: string | null;
+  battle_opens_at?: string | null;
+  submission_opens_at?: string | null;
+  voting_opens_at?: string | null;
+  submission_closes_at?: string | null;
+  voting_closes_at?: string | null;
+  winner_reveal_at?: string | null;
   starts_at?: string | null;
   kickoff_time?: string | null;
   winning_chant_id?: string | null;
@@ -55,6 +62,7 @@ export interface ChantPack {
   title: string;
   description?: string;
   audio_url?: string;
+  category?: "praise" | "roast" | "meme" | "player";
   [key: string]: unknown;
 }
 
@@ -69,6 +77,7 @@ export interface FanChant {
   battle_id?: string;
   chant_pack_id?: string | null;
   club_id?: string | null;
+  category?: "praise" | "roast" | "meme" | "player";
   title: string;
   chant_text?: string | null;
   lyrics: string;
