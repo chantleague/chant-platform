@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { supabase } from "@/app/lib/supabase";
 import { supabaseServer } from "@/app/lib/supabaseServer";
+import { getChantsForBattleSlug } from "@/app/lib/apiLayer";
 import {
 	deriveBattleRouteSlug,
 	getBattleSlugLookupCandidates,
@@ -16,6 +17,7 @@ import OfficialChantPacks from "@/app/components/OfficialChantPacks";
 import BattleVoteButton from "@/app/components/BattleVoteButton";
 import FanChantSubmissionForm from "@/app/components/FanChantSubmissionForm";
 import FanSubmittedChants from "@/app/components/FanSubmittedChants";
+import ChantScoreboard, { type ChantScoreboardRow } from "@/app/components/ChantScoreboard";
 import AdSlot from "@/components/AdSlot";
 import BattleShare from "@/components/BattleShare";
 import BattleCountdown from "@/components/BattleCountdown";
@@ -107,6 +109,23 @@ function toClubDisplayName(value?: string | null) {
 			return lower.charAt(0).toUpperCase() + lower.slice(1);
 		})
 		.join(" ");
+}
+
+function toChantScoreboardName(chantText: string, fallbackLabel: string) {
+	const firstLine = chantText
+		.split("\n")
+		.map((line) => line.trim())
+		.find((line) => Boolean(line));
+
+	if (!firstLine) {
+		return fallbackLabel;
+	}
+
+	if (firstLine.length <= 64) {
+		return firstLine;
+	}
+
+	return `${firstLine.slice(0, 61)}...`;
 }
 
 function resolveRivalryNames(slug: string, battle?: Battle | null) {
@@ -358,6 +377,87 @@ async function resolveBattleBySlug(slug: string): Promise<Battle | null> {
 	return null;
 }
 
+async function resolveChantScoreboardRows(
+	battleId: string,
+	battleSlug: string,
+): Promise<ChantScoreboardRow[]> {
+	if (!battleId || !battleSlug) {
+		return [];
+	}
+
+	const chantsPayload = await getChantsForBattleSlug(battleSlug);
+	const chantMetaById = new Map<string, { chantName: string }>();
+
+	chantsPayload.chants.forEach((chant, index) => {
+		const chantId = String(chant.chant_row_id || "").trim();
+		if (!chantId) {
+			return;
+		}
+
+		if (chantMetaById.has(chantId)) {
+			return;
+		}
+
+		chantMetaById.set(chantId, {
+			chantName: toChantScoreboardName(String(chant.chant_text || "").trim(), `Fan Chant ${index + 1}`),
+		});
+	});
+
+	const chantIds = Array.from(chantMetaById.keys());
+	if (chantIds.length === 0) {
+		return [];
+	}
+
+	const scoreLookup = await supabaseServer
+		.from("chant_scores")
+		.select(
+			"chant_id, total_points, vote_points, share_points, comment_points, remix_points, invite_points, stream_points, download_points, boost_points",
+		)
+		.in("chant_id", chantIds);
+
+	if (scoreLookup.error) {
+		console.error("battle page: failed to fetch chant score rows", {
+			battleId,
+			battleSlug,
+			error: scoreLookup.error,
+		});
+	}
+
+	const scoreByChantId = new Map<string, Record<string, unknown>>();
+	(((scoreLookup.data as Array<Record<string, unknown>> | null) || [])).forEach((row) => {
+		const chantId = String(row.chant_id || "").trim();
+		if (chantId) {
+			scoreByChantId.set(chantId, row);
+		}
+	});
+
+	return chantIds
+		.map((chantId) => {
+			const scoreRow = scoreByChantId.get(chantId);
+
+			return {
+				chantId,
+				chantName: chantMetaById.get(chantId)?.chantName || "Fan Chant",
+				totalPoints: toVoteCount(scoreRow?.total_points, 0),
+				votePoints: toVoteCount(scoreRow?.vote_points, 0),
+				sharePoints: toVoteCount(scoreRow?.share_points, 0),
+				commentPoints: toVoteCount(scoreRow?.comment_points, 0),
+				remixPoints: toVoteCount(scoreRow?.remix_points, 0),
+				invitePoints: toVoteCount(scoreRow?.invite_points, 0),
+				streamPoints: toVoteCount(scoreRow?.stream_points, 0),
+				downloadPoints: toVoteCount(scoreRow?.download_points, 0),
+				boostPoints: toVoteCount(scoreRow?.boost_points, 0),
+			} satisfies ChantScoreboardRow;
+		})
+		.sort((left, right) => {
+			if (right.totalPoints !== left.totalPoints) {
+				return right.totalPoints - left.totalPoints;
+			}
+
+			return left.chantName.localeCompare(right.chantName);
+		});
+}
+
 export default async function Page({
 	params,
 }: {
@@ -487,6 +587,21 @@ export default async function Page({
 	const battleStatus = resolveBattleStatus(kickoffTime, battle.status ? String(battle.status) : null);
 	const votingClosed = battleStatus === "closed";
 	const submissionWindowOpen = Boolean(battleId) && battleStatus === "open";
+
+	let chantScoreboardRows: ChantScoreboardRow[] = [];
+	if (battleId && routeSlug) {
+		try {
+			chantScoreboardRows = await resolveChantScoreboardRows(battleId, routeSlug);
+		} catch (error) {
+			console.error("battle page: failed to resolve chant scoreboard rows", {
+				battleId,
+				routeSlug,
+				error,
+			});
+		}
+	}
+
+	const featuredChantId = chantScoreboardRows[0]?.chantId;
 
 	let winnerChantText: string | null = null;
 	let winnerVoteCount = 0;
@@ -623,6 +738,8 @@ export default async function Page({
 				slug={routeSlug}
 				homeClub={homeClub?.name || toClubDisplayName(battle.home_team || "") || "Home Club"}
 				awayClub={awayClub?.name || toClubDisplayName(battle.away_team || "") || "Away Club"}
+				battleId={battleId || undefined}
+				chantId={featuredChantId || undefined}
 			/>
 
 			<AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_BATTLE_TOP} />
@@ -647,6 +764,12 @@ export default async function Page({
 					)}
 				</section>
 			)}
+
+			<ChantScoreboard
+				battleId={battleId}
+				battleSlug={routeSlug}
+				initialRows={chantScoreboardRows}
+			/>
 
 			<section className="grid grid-cols-2 gap-4">
 				<div className="text-center">
@@ -692,7 +815,12 @@ export default async function Page({
 						{(homeVotes + awayVotes).toLocaleString()}
 					</p>
 				</div>
-				<JoinBattleButton targetId="submit-chant-section" battleSlug={routeSlug} />
+				<JoinBattleButton
+					targetId="submit-chant-section"
+					battleSlug={routeSlug}
+					battleId={battleId || undefined}
+					defaultChantId={featuredChantId || undefined}
+				/>
 			</section>
 
 			<section id="submit-chant-section" className="space-y-4">

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { supabaseServer as supabase } from "@/app/lib/supabaseServer";
 import { resolveBattleStatus } from "@/lib/battleStatus";
+import { recordScoreEvent } from "@/lib/recordScoreEvent";
 
 const MAX_CHANTS_PER_USER = 2;
 
@@ -485,6 +486,30 @@ export async function submitFanChant(
       }
 
       return { success: false, message: "Could not save your chant." };
+    }
+
+    const createdChantRowId = chantRow?.id ? String(chantRow.id) : "";
+    if (createdChantRowId) {
+      const scoreEvent = await recordScoreEvent({
+        chantId: createdChantRowId,
+        battleId: resolvedMatchId,
+        userId,
+        eventType: "upload",
+        source: "web",
+        metadata: {
+          battle_slug: battleSlug,
+          title,
+        },
+      });
+
+      if (!scoreEvent.success) {
+        console.error("submitFanChant: upload score event failed", {
+          chantId: createdChantRowId,
+          battleSlug,
+          matchId: resolvedMatchId,
+          message: scoreEvent.message,
+        });
+      }
     }
 
     revalidatePath(`/battles/${battleSlug}`);

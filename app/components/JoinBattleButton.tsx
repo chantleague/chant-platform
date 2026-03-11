@@ -1,18 +1,68 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { trackAnalyticsEvent } from "@/app/lib/analyticsClient";
 
 interface JoinBattleButtonProps {
   targetId?: string;
   battleSlug?: string;
+  battleId?: string;
+  defaultChantId?: string;
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function toValidUuid(value?: string | null): string {
+  const candidate = String(value || "").trim();
+  if (!candidate) {
+    return "";
+  }
+
+  return UUID_PATTERN.test(candidate) ? candidate : "";
 }
 
 export default function JoinBattleButton({
   targetId,
   battleSlug,
+  battleId,
+  defaultChantId,
 }: JoinBattleButtonProps) {
   const [fansJoined, setFansJoined] = useState(1);
+  const searchParams = useSearchParams();
+
+  const postScoreEvent = (
+    eventType: "community_join" | "invite",
+    chantId: string,
+    metadata?: Record<string, unknown>,
+  ) => {
+    if (!battleId || !chantId) {
+      return;
+    }
+
+    void fetch("/api/score-events", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chant_id: chantId,
+        battle_id: battleId,
+        event_type: eventType,
+        source: "web",
+        metadata,
+      }),
+      keepalive: true,
+    }).catch((error) => {
+      console.error("join-battle: failed to record score event", {
+        eventType,
+        chantId,
+        battleId,
+        error,
+      });
+    });
+  };
 
   const handleJoinBattle = () => {
     setFansJoined((prev) => prev + 1);
@@ -20,6 +70,31 @@ export default function JoinBattleButton({
     trackAnalyticsEvent("battle_join", {
       battle_slug: battleSlug || undefined,
     });
+
+    const inviteCode = String(searchParams.get("invite") || "").trim();
+    const inviteChantId = toValidUuid(searchParams.get("chant"));
+    const fallbackChantId = toValidUuid(defaultChantId);
+    const resolvedChantId = inviteChantId || fallbackChantId;
+
+    if (resolvedChantId) {
+      postScoreEvent("community_join", resolvedChantId, {
+        battle_slug: battleSlug || null,
+      });
+    }
+
+    if (inviteCode && resolvedChantId) {
+      const inviteMarkerKey = `invite-score:${battleSlug || "battle"}:${inviteCode}:${resolvedChantId}`;
+      const alreadyTracked = localStorage.getItem(inviteMarkerKey) === "1";
+
+      if (!alreadyTracked) {
+        postScoreEvent("invite", resolvedChantId, {
+          battle_slug: battleSlug || null,
+          invite_code: inviteCode,
+        });
+
+        localStorage.setItem(inviteMarkerKey, "1");
+      }
+    }
 
     if (!targetId) {
       return;

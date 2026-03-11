@@ -3,6 +3,7 @@ import { toRenderableChantText } from "@/app/lib/chantContent";
 import { mockBattles } from "@/app/lib/mockBattles";
 import { supabase } from "@/app/lib/supabase";
 import { supabaseServer } from "@/app/lib/supabaseServer";
+import { recordScoreEvent } from "@/lib/recordScoreEvent";
 import { resolveBattleStatus } from "@/lib/battleStatus";
 
 type RawRow = Record<string, unknown>;
@@ -888,6 +889,29 @@ export async function submitChantVote(input: SubmitChantVoteInput): Promise<Subm
               error: toSafeErrorLog(syncVoteCountResult.error),
             });
           }
+        }
+      }
+
+      if (resolvedChantRowId && resolvedMatchId) {
+        const scoreEvent = await recordScoreEvent({
+          chantId: resolvedChantRowId,
+          battleId: resolvedMatchId,
+          userId: normalizedUser,
+          eventType: "vote",
+          source: "web",
+          metadata: {
+            battle_slug: normalizedBattleSlug || null,
+            vote_target_column: target.column,
+          },
+        });
+
+        if (!scoreEvent.success) {
+          console.error("api/votes: score event insert failed", {
+            chantRowId: resolvedChantRowId,
+            matchId: resolvedMatchId,
+            target,
+            message: scoreEvent.message,
+          });
         }
       }
 
