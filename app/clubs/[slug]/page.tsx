@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabase } from "@/app/lib/supabase";
 import { BattleCard } from "../../components/BattleCard";
@@ -8,6 +9,7 @@ import {
   deriveBattleRouteSlug,
   normalizeBattleSlug,
 } from "@/app/lib/battleRoutes";
+import { getTrendingChants } from "@/lib/trending/getTrendingChants";
 import type { Club, Battle, Fixture } from "@/app/lib/types";
 
 type ClubParams = { slug: string | string[] };
@@ -196,6 +198,12 @@ export default async function ClubPage({
     }
   }
 
+  const topChantsThisWeek = await getTrendingChants({
+    limit: 6,
+    clubId: String(club.id || "").trim(),
+    withinDays: 7,
+  });
+
   return (
     <div className="p-6 space-y-6">
       <div className="space-y-2">
@@ -240,6 +248,44 @@ export default async function ClubPage({
                 />
               );
             })}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold text-zinc-50">Top Chants This Week</h2>
+        {topChantsThisWeek.length === 0 ? (
+          <p className="text-sm text-zinc-400">No trending chants from this club yet this week.</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {topChantsThisWeek.map((chant) => (
+              <article
+                key={chant.chantId}
+                className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-4"
+              >
+                <p className="line-clamp-3 text-sm text-zinc-200">{chant.chantText}</p>
+                <p className="mt-2 text-xs text-zinc-400">Total Score: {chant.totalScore.toLocaleString()}</p>
+                <p className="text-xs text-emerald-300">
+                  Trending Score: {chant.trendingScore.toLocaleString()}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href={`/chants/${encodeURIComponent(chant.chantId)}`}
+                    className="rounded-full border border-zinc-700 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-200 transition hover:border-zinc-500"
+                  >
+                    Open Chant
+                  </Link>
+                  {chant.battleSlug ? (
+                    <Link
+                      href={`/battles/${encodeURIComponent(chant.battleSlug)}`}
+                      className="rounded-full border border-emerald-500 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-300 transition hover:bg-emerald-500 hover:text-black"
+                    >
+                      Open Battle
+                    </Link>
+                  ) : null}
+                </div>
+              </article>
+            ))}
           </div>
         )}
       </section>

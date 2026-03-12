@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { supabase } from "@/app/lib/supabase";
@@ -29,6 +30,7 @@ import {
 	type BattlePhaseStatus,
 } from "@/lib/battleLifecycle";
 import { getBattleScores } from "@/lib/scoring/getBattleScores";
+import { getTrendingChants } from "@/lib/trending/getTrendingChants";
 
 type BattleParams = { slug: string | string[] };
 const SITE_URL = "https://chantleague.com";
@@ -757,6 +759,22 @@ export default async function Page({
 	}
 
 	const featuredChantId = chantScoreboardRows[0]?.chantId;
+	const excludedClubIds = [homeClub?.id, awayClub?.id]
+		.map((clubId) => String(clubId || "").trim())
+		.filter((clubId) => Boolean(clubId));
+
+	let trendingFromOtherClubs = await getTrendingChants({
+		limit: 6,
+		excludeBattleId: battleId,
+		excludeClubIds: excludedClubIds,
+	});
+
+	if (trendingFromOtherClubs.length === 0) {
+		trendingFromOtherClubs = await getTrendingChants({
+			limit: 6,
+			excludeBattleId: battleId,
+		});
+	}
 
 	let winnerChantText: string | null = null;
 	let winnerVoteCount = 0;
@@ -915,6 +933,50 @@ export default async function Page({
 				battleSlug={routeSlug}
 				initialRows={chantScoreboardRows}
 			/>
+
+			<section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
+				<div>
+					<p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Trending from other clubs</p>
+					<h2 className="mt-1 text-lg font-semibold text-zinc-50">Discover Viral Chants Across Rivalries</h2>
+				</div>
+
+				{trendingFromOtherClubs.length === 0 ? (
+					<p className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3 text-sm text-zinc-400">
+						No cross-club trending chants available right now.
+					</p>
+				) : (
+					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+						{trendingFromOtherClubs.map((chant) => (
+							<article
+								key={chant.chantId}
+								className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3"
+							>
+								<p className="line-clamp-3 text-sm text-zinc-200">{chant.chantText}</p>
+								<p className="mt-2 text-xs text-zinc-400">Club: {chant.clubName}</p>
+								<p className="text-xs text-emerald-300">
+									Trending Score: {chant.trendingScore.toLocaleString()}
+								</p>
+								<div className="mt-3 flex flex-wrap gap-2">
+									<Link
+										href={`/chants/${encodeURIComponent(chant.chantId)}`}
+										className="rounded-full border border-zinc-700 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-200 transition hover:border-zinc-500"
+									>
+										Open Chant
+									</Link>
+									{chant.battleSlug ? (
+										<Link
+											href={`/battles/${encodeURIComponent(chant.battleSlug)}`}
+											className="rounded-full border border-emerald-500 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-300 transition hover:bg-emerald-500 hover:text-black"
+										>
+											Battle
+										</Link>
+									) : null}
+								</div>
+							</article>
+						))}
+					</div>
+				)}
+			</section>
 
 			<section className="grid grid-cols-2 gap-4">
 				<div className="text-center">

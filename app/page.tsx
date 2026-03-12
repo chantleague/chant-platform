@@ -1,5 +1,6 @@
 import Link from "next/link";
 import EmailSignup from "@/components/EmailSignup";
+import { getTrendingChants } from "@/lib/trending/getTrendingChants";
 import { getTrendingBattles } from "@/lib/trendingBattles";
 
 function formatKickoff(value?: string | null) {
@@ -44,6 +45,7 @@ function formatTimeUntil(value?: string | null) {
 }
 
 export default async function HomePage() {
+  const trendingChants = await getTrendingChants({ limit: 12 });
   const trendingBattles = (await getTrendingBattles()).slice(0, 6);
 
   return (
@@ -93,6 +95,52 @@ export default async function HomePage() {
             <p className="mt-2 text-sm text-zinc-400">Top chant wins the rivalry.</p>
           </div>
         </div>
+      </section>
+
+      <section id="trending-chants" className="space-y-5 scroll-mt-24">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">🔥 Trending Chants</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-50">Viral Chants Across Battles</h2>
+        </div>
+
+        {trendingChants.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5 text-sm text-zinc-400">
+            No trending chants available yet.
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {trendingChants.map((chant) => (
+              <article
+                key={chant.chantId}
+                className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5 transition hover:border-zinc-600"
+              >
+                <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">Rank #{chant.rank}</p>
+                <p className="mt-2 line-clamp-3 text-sm text-zinc-300">{chant.chantText}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-zinc-400">
+                  <p>Club: {chant.clubName}</p>
+                  <p>Total Score: {chant.totalScore.toLocaleString()}</p>
+                  <p>Shares: {chant.shares.toLocaleString()}</p>
+                  <p>Video Plays: {chant.videoPlays.toLocaleString()}</p>
+                </div>
+                <p className="mt-2 text-sm text-emerald-300">Trending Score: {chant.trendingScore.toLocaleString()}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {chant.battleSlug ? (
+                    <Link
+                      href={`/battles/${encodeURIComponent(chant.battleSlug)}`}
+                      className="inline-flex rounded-full border border-emerald-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-300 transition hover:bg-emerald-500 hover:text-black"
+                    >
+                      Open Battle
+                    </Link>
+                  ) : (
+                    <span className="inline-flex rounded-full border border-zinc-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                      Battle Link Pending
+                    </span>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section id="trending" className="space-y-5 scroll-mt-24">
