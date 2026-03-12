@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { trackAnalyticsEvent } from "@/app/lib/analyticsClient";
 import { buildChantShareText } from "@/lib/shareText";
+import { generateTikTokCaption } from "@/lib/tiktokCaption";
 
 interface BattleShareProps {
   slug: string;
@@ -18,6 +19,40 @@ interface BattleShareProps {
 }
 
 const SITE_URL = "https://chantleague.com";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function getOrCreateFanId() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  let id = window.localStorage.getItem("chant-user-id");
+  if (!id) {
+    id = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    window.localStorage.setItem("chant-user-id", id);
+  }
+
+  return id;
+}
+
+function firstLyricLine(value: string) {
+  const firstLine = value
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => Boolean(line));
+
+  return firstLine || "Sing it loud from the stands";
+}
+
+function toValidUuid(value: string) {
+  const candidate = String(value || "").trim();
+  if (!candidate) {
+    return "";
+  }
+
+  return UUID_PATTERN.test(candidate) ? candidate : "";
+}
 
 export default function BattleShare({
   slug,
@@ -28,6 +63,7 @@ export default function BattleShare({
   chants = [],
 }: BattleShareProps) {
   const [copiedChantId, setCopiedChantId] = useState<string | null>(null);
+  const [fanId] = useState(() => getOrCreateFanId());
 
   const buttonClass =
     "rounded-lg bg-neutral-800 px-3 py-2 text-xs font-semibold text-zinc-100 transition hover:bg-neutral-700";
@@ -45,12 +81,24 @@ export default function BattleShare({
     return `${SITE_URL}${battlePath}?${search.toString()}`;
   };
 
+  const toTikTokShareUrl = (chantId: string) => {
+    const validChantId = toValidUuid(chantId);
+    if (!validChantId) {
+      return `${SITE_URL}/battles/${encodeURIComponent(slug)}`;
+    }
+
+    return `${SITE_URL}/chants/${encodeURIComponent(validChantId)}?ref=tiktok`;
+  };
+
   const recordShare = async (
     source: "twitter" | "whatsapp" | "tiktok" | "copy_link",
     chantId: string,
     category?: string | null,
     shareUrl?: string,
+    videoUrl?: string,
   ) => {
+    const eventType = source === "tiktok" ? "tiktok_usage" : source === "whatsapp" ? "whatsapp_share" : "share";
+
     trackAnalyticsEvent("chant_share", {
       battle_slug: slug,
       source,
@@ -59,20 +107,23 @@ export default function BattleShare({
     });
 
     try {
-      await fetch("/api/score-events", {
+      await fetch("/api/score-event", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          chant_id: chantId,
-          battle_id: battleId,
-          event_type: "share",
+          chantId,
+          battleId,
+          eventType,
           source,
           metadata: {
+            fan_id: fanId || null,
+            user_id: fanId || null,
             battle_slug: slug,
             category: category || null,
             share_url: shareUrl || `${SITE_URL}/battles/${encodeURIComponent(slug)}`,
+            video_url: videoUrl || null,
           },
         }),
         keepalive: true,
@@ -107,7 +158,8 @@ export default function BattleShare({
       });
     }
 
-    void recordShare("tiktok", chantId, category, safeUrl);
+    const videoUrl = `${SITE_URL}/chants/${encodeURIComponent(chantId)}/video`;
+    void recordShare("tiktok", chantId, category, safeUrl, videoUrl);
     window.open("https://www.tiktok.com", "_blank", "noopener,noreferrer");
   };
 
@@ -143,12 +195,18 @@ export default function BattleShare({
         <div className="space-y-3">
           {visibleChants.map((chant) => {
             const shareUrl = toShareUrl(chant.chantId, chant.category);
+            const tiktokShareUrl = toTikTokShareUrl(chant.chantId);
             const shareText = buildChantShareText({
               homeClub,
               awayClub,
               battleSlug: slug,
               category: chant.category,
               kickoffAt,
+            });
+            const tiktokCaption = generateTikTokCaption({
+              clubA: homeClub,
+              clubB: awayClub,
+              chantLyricsLine: firstLyricLine(chant.chantText),
             });
             const twitterShareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`;
             const whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`;
@@ -162,7 +220,7 @@ export default function BattleShare({
                     type="button"
                     className={buttonClass}
                     onClick={() => {
-                      void handleTikTokShare(chant.chantId, chant.category, shareText, shareUrl);
+                      void handleTikTokShare(chant.chantId, chant.category, tiktokCaption, tiktokShareUrl);
                     }}
                   >
                     Share to TikTok

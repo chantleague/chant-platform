@@ -28,6 +28,7 @@ import {
 	isVotingOpen as isLifecycleVotingOpen,
 	type BattlePhaseStatus,
 } from "@/lib/battleLifecycle";
+import { getBattleScores } from "@/lib/scoring/getBattleScores";
 
 type BattleParams = { slug: string | string[] };
 const SITE_URL = "https://chantleague.com";
@@ -530,50 +531,42 @@ async function resolveChantScoreboardRows(
 		};
 	}
 
-	const scoreLookup = await supabaseServer
-		.from("chant_scores")
-		.select(
-			"chant_id, total_points, vote_points, share_points, comment_points, remix_points, invite_points, stream_points, download_points, boost_points",
-		)
-		.in("chant_id", chantIds);
+	const scoreRows = await getBattleScores(battleId);
+	const scoreByChantId = new Map<string, { total_score: number; event_breakdown: Record<string, number> }>();
 
-	if (scoreLookup.error) {
-		console.error("battle page: failed to fetch chant score rows", {
-			battleId,
-			battleSlug,
-			error: scoreLookup.error,
+	scoreRows.forEach((row) => {
+		scoreByChantId.set(row.chant_id, {
+			total_score: toVoteCount(row.total_score, 0),
+			event_breakdown: row.event_breakdown,
 		});
-	}
-
-	const scoreByChantId = new Map<string, Record<string, unknown>>();
-	(((scoreLookup.data as Array<Record<string, unknown>> | null) || [])).forEach((row) => {
-		const chantId = String(row.chant_id || "").trim();
-		if (chantId) {
-			scoreByChantId.set(chantId, row);
-		}
 	});
 
 	const scoreboardRows = chantIds
 		.map((chantId) => {
 			const scoreRow = scoreByChantId.get(chantId);
+			const breakdown = scoreRow?.event_breakdown || {};
+			const votes = toVoteCount(breakdown.vote, 0);
+			const shares =
+				toVoteCount(breakdown.share, 0) + toVoteCount(breakdown.whatsapp_share, 0);
+			const plays =
+				toVoteCount(breakdown.play, 0) +
+				toVoteCount(breakdown.youtube_play, 0) +
+				toVoteCount(breakdown.spotify_play, 0);
+			const tiktokUsage = toVoteCount(breakdown.tiktok_usage, 0);
 
 			return {
 				chantId,
 				chantName: chantMetaById.get(chantId)?.chantName || "Fan Chant",
-				totalPoints: toVoteCount(scoreRow?.total_points, 0),
-				votePoints: toVoteCount(scoreRow?.vote_points, 0),
-				sharePoints: toVoteCount(scoreRow?.share_points, 0),
-				commentPoints: toVoteCount(scoreRow?.comment_points, 0),
-				remixPoints: toVoteCount(scoreRow?.remix_points, 0),
-				invitePoints: toVoteCount(scoreRow?.invite_points, 0),
-				streamPoints: toVoteCount(scoreRow?.stream_points, 0),
-				downloadPoints: toVoteCount(scoreRow?.download_points, 0),
-				boostPoints: toVoteCount(scoreRow?.boost_points, 0),
+				totalScore: toVoteCount(scoreRow?.total_score, 0),
+				votes,
+				shares,
+				plays,
+				tiktokUsage,
 			} satisfies ChantScoreboardRow;
 		})
 		.sort((left, right) => {
-			if (right.totalPoints !== left.totalPoints) {
-				return right.totalPoints - left.totalPoints;
+			if (right.totalScore !== left.totalScore) {
+				return right.totalScore - left.totalScore;
 			}
 
 			return left.chantName.localeCompare(right.chantName);
@@ -992,7 +985,13 @@ export default async function Page({
 					simpleMode
 				/>
 
-				<FanSubmittedChants battleSlug={routeSlug} votingClosed={!votingOpen} />
+				<FanSubmittedChants
+					battleSlug={routeSlug}
+					battleId={battleId || undefined}
+					homeClubName={homeClub?.name || toClubDisplayName(battle.home_team || "") || "Home Club"}
+					awayClubName={awayClub?.name || toClubDisplayName(battle.away_team || "") || "Away Club"}
+					votingClosed={!votingOpen}
+				/>
 			</section>
 
 			<OfficialChantPacks

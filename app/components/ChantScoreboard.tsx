@@ -7,15 +7,11 @@ import { trackAnalyticsEvent } from "@/app/lib/analyticsClient";
 export interface ChantScoreboardRow {
   chantId: string;
   chantName: string;
-  totalPoints: number;
-  votePoints: number;
-  sharePoints: number;
-  commentPoints: number;
-  remixPoints: number;
-  invitePoints: number;
-  streamPoints: number;
-  downloadPoints: number;
-  boostPoints: number;
+  totalScore: number;
+  votes: number;
+  shares: number;
+  plays: number;
+  tiktokUsage: number;
 }
 
 interface ChantScoreboardProps {
@@ -28,17 +24,15 @@ interface ChantScorePayload {
   total_points?: number;
   votes?: number;
   shares?: number;
-  comments?: number;
-  remixes?: number;
-  invites?: number;
-  downloads?: number;
-  streams?: number;
-  boosts?: number;
+  plays?: number;
+  tiktok_usage?: number;
 }
 
 interface RealtimeEventRow {
   chant_id?: string;
   event_type?: string;
+  source?: string;
+  value?: number;
   points?: number;
 }
 
@@ -53,88 +47,81 @@ function toInt(value: unknown): number {
 
 function sortRows(rows: ChantScoreboardRow[]) {
   return [...rows].sort((left, right) => {
-    if (right.totalPoints !== left.totalPoints) {
-      return right.totalPoints - left.totalPoints;
+    if (right.totalScore !== left.totalScore) {
+      return right.totalScore - left.totalScore;
     }
 
     return left.chantName.localeCompare(right.chantName);
   });
 }
 
+function normalizeEventType(eventType: string, source: string) {
+  const normalizedEventType = String(eventType || "").trim().toLowerCase();
+  const normalizedSource = String(source || "").trim().toLowerCase();
+
+  if (normalizedEventType === "video_play") {
+    return "play";
+  }
+  if (normalizedEventType === "spotify_stream") {
+    return "spotify_play";
+  }
+  if (normalizedEventType === "share" && normalizedSource === "tiktok") {
+    return "tiktok_usage";
+  }
+  if (normalizedEventType === "share" && normalizedSource === "whatsapp") {
+    return "whatsapp_share";
+  }
+
+  return normalizedEventType;
+}
+
 function applyEventToRow(
   row: ChantScoreboardRow,
   eventType: string,
+  source: string,
   points: number,
 ): ChantScoreboardRow {
-  const normalizedEventType = eventType.toLowerCase();
+  const normalizedEventType = normalizeEventType(eventType, source);
 
   if (normalizedEventType === "vote") {
     return {
       ...row,
-      totalPoints: row.totalPoints + points,
-      votePoints: row.votePoints + points,
+      totalScore: row.totalScore + points,
+      votes: row.votes + 1,
     };
   }
 
-  if (normalizedEventType === "share") {
+  if (normalizedEventType === "share" || normalizedEventType === "whatsapp_share") {
     return {
       ...row,
-      totalPoints: row.totalPoints + points,
-      sharePoints: row.sharePoints + points,
+      totalScore: row.totalScore + points,
+      shares: row.shares + 1,
     };
   }
 
-  if (normalizedEventType === "comment") {
+  if (
+    normalizedEventType === "play" ||
+    normalizedEventType === "youtube_play" ||
+    normalizedEventType === "spotify_play"
+  ) {
     return {
       ...row,
-      totalPoints: row.totalPoints + points,
-      commentPoints: row.commentPoints + points,
+      totalScore: row.totalScore + points,
+      plays: row.plays + 1,
     };
   }
 
-  if (normalizedEventType === "remix") {
+  if (normalizedEventType === "tiktok_usage") {
     return {
       ...row,
-      totalPoints: row.totalPoints + points,
-      remixPoints: row.remixPoints + points,
-    };
-  }
-
-  if (normalizedEventType === "invite") {
-    return {
-      ...row,
-      totalPoints: row.totalPoints + points,
-      invitePoints: row.invitePoints + points,
-    };
-  }
-
-  if (normalizedEventType === "download") {
-    return {
-      ...row,
-      totalPoints: row.totalPoints + points,
-      downloadPoints: row.downloadPoints + points,
-    };
-  }
-
-  if (normalizedEventType === "spotify_stream" || normalizedEventType === "youtube_play") {
-    return {
-      ...row,
-      totalPoints: row.totalPoints + points,
-      streamPoints: row.streamPoints + points,
-    };
-  }
-
-  if (normalizedEventType === "boost") {
-    return {
-      ...row,
-      totalPoints: row.totalPoints + points,
-      boostPoints: row.boostPoints + points,
+      totalScore: row.totalScore + points,
+      tiktokUsage: row.tiktokUsage + 1,
     };
   }
 
   return {
     ...row,
-    totalPoints: row.totalPoints + points,
+    totalScore: row.totalScore + points,
   };
 }
 
@@ -155,8 +142,8 @@ export default function ChantScoreboard({
     setRows(sortRows(initialRows));
   }, [initialRows]);
 
-  const battleTotalPoints = useMemo(() => {
-    return rows.reduce((sum, row) => sum + row.totalPoints, 0);
+  const battleTotalScore = useMemo(() => {
+    return rows.reduce((sum, row) => sum + row.totalScore, 0);
   }, [rows]);
 
   const hydrateChantFromApi = async (chantId: string) => {
@@ -175,15 +162,11 @@ export default function ChantScoreboard({
             existingIndex >= 0
               ? previous[existingIndex].chantName
               : `Fan Chant ${chantId.slice(0, 8)}`,
-          totalPoints: toInt(payload.total_points),
-          votePoints: toInt(payload.votes),
-          sharePoints: toInt(payload.shares),
-          commentPoints: toInt(payload.comments),
-          remixPoints: toInt(payload.remixes),
-          invitePoints: toInt(payload.invites),
-          downloadPoints: toInt(payload.downloads),
-          streamPoints: toInt(payload.streams),
-          boostPoints: toInt(payload.boosts),
+          totalScore: toInt(payload.total_points),
+          votes: toInt(payload.votes),
+          shares: toInt(payload.shares),
+          plays: toInt(payload.plays),
+          tiktokUsage: toInt(payload.tiktok_usage),
         };
 
         if (existingIndex >= 0) {
@@ -213,15 +196,15 @@ export default function ChantScoreboard({
     }));
 
     try {
-      const response = await fetch("/api/score-events", {
+      const response = await fetch("/api/score-event", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          chant_id: chantId,
-          battle_id: battleId,
-          event_type: "boost",
+          chantId,
+          battleId,
+          eventType: "boost_purchase",
           source: "app",
           metadata: {
             battle_slug: battleSlug,
@@ -279,7 +262,8 @@ export default function ChantScoreboard({
           const nextRow = (payload.new || {}) as RealtimeEventRow;
           const chantId = String(nextRow.chant_id || "").trim();
           const eventType = String(nextRow.event_type || "").trim().toLowerCase();
-          const points = toInt(nextRow.points);
+          const source = String(nextRow.source || "").trim().toLowerCase();
+          const points = toInt(nextRow.value ?? nextRow.points);
 
           if (!chantId || !eventType || points <= 0) {
             return;
@@ -296,7 +280,7 @@ export default function ChantScoreboard({
             }
 
             const next = [...previous];
-            next[existingIndex] = applyEventToRow(next[existingIndex], eventType, points);
+            next[existingIndex] = applyEventToRow(next[existingIndex], eventType, source, points);
             return sortRows(next);
           });
         },
@@ -320,11 +304,11 @@ export default function ChantScoreboard({
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Chant Scoreboard</p>
-          <h2 className="text-lg font-semibold text-zinc-50">Live Engagement Points</h2>
+          <h2 className="text-lg font-semibold text-zinc-50">Live Engagement Score</h2>
         </div>
         <div className="text-right">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Battle Score</p>
-          <p className="text-2xl font-semibold text-emerald-400">{battleTotalPoints.toLocaleString()}</p>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Battle Total</p>
+          <p className="text-2xl font-semibold text-emerald-400">{battleTotalScore.toLocaleString()}</p>
         </div>
       </div>
 
@@ -340,7 +324,7 @@ export default function ChantScoreboard({
                 <div>
                   <h3 className="text-sm font-semibold text-zinc-100">{row.chantName}</h3>
                   <p className="mt-1 text-sm text-zinc-300">
-                    Score: <span className="font-semibold text-emerald-300">{row.totalPoints.toLocaleString()}</span>
+                    Score: <span className="font-semibold text-emerald-300">{row.totalScore.toLocaleString()}</span>
                   </p>
                 </div>
 
@@ -352,42 +336,26 @@ export default function ChantScoreboard({
                   disabled={Boolean(boostingByChantId[row.chantId])}
                   className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-zinc-700"
                 >
-                  {boostingByChantId[row.chantId] ? "Boosting..." : "Sponsor Boost (+20)"}
+                  {boostingByChantId[row.chantId] ? "Boosting..." : "Sponsor Boost (+10)"}
                 </button>
               </div>
 
               <dl className="mt-3 grid grid-cols-2 gap-2 text-xs text-zinc-300 sm:grid-cols-4">
                 <div>
                   <dt className="text-zinc-500">Votes</dt>
-                  <dd>{row.votePoints.toLocaleString()}</dd>
+                  <dd>{row.votes.toLocaleString()}</dd>
                 </div>
                 <div>
                   <dt className="text-zinc-500">Shares</dt>
-                  <dd>{row.sharePoints.toLocaleString()}</dd>
+                  <dd>{row.shares.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">Comments</dt>
-                  <dd>{row.commentPoints.toLocaleString()}</dd>
+                  <dt className="text-zinc-500">Plays</dt>
+                  <dd>{row.plays.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">Remixes</dt>
-                  <dd>{row.remixPoints.toLocaleString()}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-500">Invites</dt>
-                  <dd>{row.invitePoints.toLocaleString()}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-500">Downloads</dt>
-                  <dd>{row.downloadPoints.toLocaleString()}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-500">Streams</dt>
-                  <dd>{row.streamPoints.toLocaleString()}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-500">Boosts</dt>
-                  <dd>{row.boostPoints.toLocaleString()}</dd>
+                  <dt className="text-zinc-500">TikTok Usage</dt>
+                  <dd>{row.tiktokUsage.toLocaleString()}</dd>
                 </div>
               </dl>
             </article>

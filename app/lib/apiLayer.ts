@@ -3,7 +3,7 @@ import { toRenderableChantText } from "@/app/lib/chantContent";
 import { mockBattles } from "@/app/lib/mockBattles";
 import { supabase } from "@/app/lib/supabase";
 import { supabaseServer } from "@/app/lib/supabaseServer";
-import { recordScoreEvent } from "@/lib/recordScoreEvent";
+import { recordScoreEvent as recordEngagementScoreEvent } from "@/lib/scoring/recordScoreEvent";
 import {
   getBattleLifecycleFromRow,
   isVotingOpen as isLifecycleVotingOpen,
@@ -950,15 +950,16 @@ export async function submitChantVote(input: SubmitChantVoteInput): Promise<Subm
       }
 
       if (resolvedChantRowId && resolvedMatchId) {
-        const scoreEvent = await recordScoreEvent({
+        const scoreEvent = await recordEngagementScoreEvent({
           chantId: resolvedChantRowId,
           battleId: resolvedMatchId,
-          userId: normalizedUser,
           eventType: "vote",
           source: "web",
           metadata: {
             battle_slug: normalizedBattleSlug || null,
             vote_target_column: target.column,
+            fan_id: normalizedUser,
+            user_id: normalizedUser,
           },
         });
 
